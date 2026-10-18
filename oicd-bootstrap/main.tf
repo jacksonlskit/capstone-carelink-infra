@@ -52,7 +52,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # -----------------------------------------------------------------------------
-# OIDC TRUST POLICY (SCOPED TO ACCOUNT - MATCHES ALL CASING & EVENTS)
+# OIDC TRUST POLICY (ACCOMMODATES NUMERICAL GITHUB IDS)
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "github_oidc_trust" {
@@ -71,11 +71,14 @@ data "aws_iam_policy_document" "github_oidc_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # Matches repo:jacksonlskit@<id>/<repo>@<id>:<event>
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${local.github_owner}/*"
+        "repo:${local.github_owner}*${local.repo_infra}*",
+        "repo:${local.github_owner}*${local.repo_app}*",
+        "repo:${local.github_owner}*"
       ]
     }
   }

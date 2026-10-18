@@ -1,203 +1,191 @@
-# Create-Capstone-CareLink-Infra
+# Capstone CareLink — Cloud Infrastructure & OIDC Foundation
 
-# Capstone CareLink Infrastructure (`Capstone-CareLink-Infra`)
-
-This repository contains the Terraform Infrastructure as Code (IaC) and CI/CD automation pipelines for the **CareLink** platform on AWS.
+Production-grade Infrastructure-as-Code (IaC) repository managing the automated AWS cloud infrastructure, keyless OpenID Connect (OIDC) identity federation, and GitHub Actions CI/CD pipelines for the CareLink platform.
 
 ---
 
-## 1. Architecture & Security Overview
+## 1. Architecture Overview
 
-### AWS IAM OIDC Authentication (Keyless CI/CD)
-To eliminate long-lived AWS access keys in GitHub Secrets, this project uses **AWS IAM OpenID Connect (OIDC)** identity federation. GitHub Actions runners obtain short-lived JSON Web Tokens (JWT) signed by `token.actions.githubusercontent.com` and exchange them via AWS STS (`sts:AssumeRoleWithWebIdentity`) for temporary credentials.
 
-- **OIDC Provider URL:** `token.actions.githubusercontent.com`
-- **Audience (`aud`):** `sts.amazonaws.com`
-- **Default AWS Region:** `us-east-1`
 
-### Shared Role Matrix
++------------------------------------------+
+|             GitHub Platform              |
+|  - capstone-carelink-infra               |
+|  - capstone-carelink-app                 |
++--------------------+---------------------+
+|
+| Short-Lived OIDC JWT
+v
++--------------------+---------------------+
+|        AWS IAM OIDC Provider             |
+| (token.actions.githubusercontent.com)    |
++--------------------+---------------------+
+|
++--------------------------+--------------------------+
+| STS:AssumeRoleWithWebIdentity                       |
+v                                                     v
++----------------------------+                        +----------------------------+
+| carelink-github-staging    |                        | carelink-github-production |
+| (AdministratorAccess)      |                        | (AdministratorAccess)      |
++--------------+-------------+                        +--------------+-------------+
+|                                                     |
+| Deployment & Speculative Plans                      | Gatekeeper Approval Required
+v                                                     v
++----------------------------+                        +----------------------------+
+|   Staging Infrastructure   |                        | Production Infrastructure  |
++----------------------------+                        +----------------------------+
+\                                                     /
+-------------------+-------------------------------/
+| State Locking (Native S3)
+v
++----------------------------+
+|   carelink-infra-state-*   |
+|   (Terraform 1.10+ Native) |
++----------------------------+
 
-| Role Name | Purpose | Assigned Repo Variable | Attached AWS Policy |
-| :--- | :--- | :--- | :--- |
-| `carelink-github-sa-role` | Solutions Architect / Terraform CI/CD (Plan & Apply) | `vars.SA_ROLE_ARN` | `AdministratorAccess` |
-| `carelink-github-devops-role` | Container Build & ECR Push | `vars.DEVOPS_ROLE_ARN` | `AmazonEC2ContainerRegistryPowerUser` |
-| `carelink-github-sre-role` | Observability & Reliability Monitoring | `vars.SRE_ROLE_ARN` | `CloudWatchFullAccess` |
-
-> **Note on OIDC Subject (`sub`) Claims:** GitHub Actions includes internal numeric IDs in token subjects (e.g., `repo:jacksonlskit@<ID>/Capstone-CareLink-Infra@<ID>:ref:...`). All IAM trust policies use `StringLike` wildcards (`repo:jacksonlskit*Capstone-CareLink-Infra*:*`) to accommodate these claims.
-
----
-
-## 2. Repository Variables
-
-The following repository variables are automatically provisioned and managed by `oicd-bootstrap/main.tf`:
-
-- `AWS_REGION`: `us-east-1`
-- `SA_ROLE_ARN`: `arn:aws:iam::<ACCOUNT_ID>:role/carelink-github-sa-role`
-- `DEVOPS_ROLE_ARN`: `arn:aws:iam::<ACCOUNT_ID>:role/carelink-github-devops-role`
-- `SRE_ROLE_ARN`: `arn:aws:iam::<ACCOUNT_ID>:role/carelink-github-sre-role`
-
----
-
-## 3. GitHub Actions Workflows
-
-All workflows are located under `.github/workflows/`.
-
-1. **`test-oicd.yaml`**: Multi-role verification suite that checks OIDC token generation and caller identities for SA, SRE, and DevOps roles in parallel.
-2. **`terraform.yaml`**: Continuous integration and deployment pipeline for infrastructure provisioning.
-
----
-
-## 4. Solutions Architect CI/CD Workflow Template
-
-Place this template in `.github/workflows/terraform.yaml` to enable automated pull request planning and push-to-main deployment:
-
-```yaml
-name: "Terraform CI/CD"
-
-on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - "*.tf"
-  push:
-    branches:
-      - main
-    paths:
-      - "terraform/**"
-      - "*.tf"
-
-permissions:
-  id-token: write        # Required: mints OIDC JWT token
-  contents: read         # Required: repository checkout
-  pull-requests: write   # Required: posts plan summary to PR comments
-
-jobs:
-  # ===========================================================================
-  # 1. TERRAFORM PLAN (Executes on Pull Requests)
-  # ===========================================================================
-  terraform-plan:
-    name: "Terraform Plan"
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: . # Adjust if root module is in a subfolder (e.g., ./terraform)
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.7"
-
-      - name: Configure AWS Credentials (SA Role via OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.SA_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          audience: sts.amazonaws.com
-
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check
-        continue-on-error: true
-
-      - name: Terraform Init
-        id: init
-        run: terraform init
-
-      - name: Terraform Validate
-        id: validate
-        run: terraform validate -no-color
-
-      - name: Terraform Plan
-        id: plan
-        run: |
-          terraform plan -no-color -out=tfplan \
-            && terraform show -no-color tfplan > tfplan.txt
-        continue-on-error: false
-
-      - name: Publish Plan Summary to PR
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            let planOutput = '';
-            try {
-              planOutput = fs.readFileSync('${{ github.workspace }}/tfplan.txt', 'utf8');
-              if (planOutput.length > 60000) {
-                planOutput = planOutput.substring(0, 60000) + '\n... [Plan output truncated due to GitHub character limit]';
-              }
-            } catch (err) {
-              planOutput = 'Unable to read tfplan.txt output.';
-            }
-
-            const comment = `#### Terraform Format Check: \\`${{ steps.fmt.outcome }}\\`
-            #### Terraform Initialization: \\`${{ steps.init.outcome }}\\`
-            #### Terraform Validation: \\`${{ steps.validate.outcome }}\\`
-            #### Terraform Plan: \\`${{ steps.plan.outcome }}\\`
-
-            <details><summary>Click to view Plan details</summary>
-
-            \\`\\`\\`hcl
-            ${planOutput}
-            \\`\\`\\`
-
-            </details>
-
-            *Triggered by: @${{ github.actor }} | Branch: \\`${{ github.head_ref }}\\`*`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-
-  # ===========================================================================
-  # 2. TERRAFORM APPLY (Executes on Push to Main)
-  # ===========================================================================
-  terraform-apply:
-    name: "Terraform Apply"
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: . # Adjust if root module is in a subfolder (e.g., ./terraform)
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.7"
-
-      - name: Configure AWS Credentials (SA Role via OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.SA_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          audience: sts.amazonaws.com
-
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false
-```
 
 ---
 
-## 5. Local Development & Bootstrap
+## 2. Key Architectural Highlights
 
-To update base OIDC roles or GitHub settings:
-1. Navigate to `oicd-bootstrap/`.
-2. Ensure AWS CLI authentication is active in `us-east-1`.
-3. Run `terraform plan` and `terraform apply`.
+* **Keyless OIDC Identity Federation:** Eliminates permanent IAM access keys (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). GitHub Actions authenticates dynamically using cryptographically signed JSON Web Tokens (JWT) verified by AWS STS.
+* **ID-Resilient Subject Matching:** Accommodates GitHub's internal numerical Account ID and Repository ID token injection (`repo:<owner>@<id>/<repo>@<id>:...`) using scoped prefix wildcards (`repo:jacksonlskit*`).
+* **Native S3 State Locking (No DynamoDB):** Leverages Terraform `>= 1.10.0` native conditional writes against Amazon S3 (`PutObject` with preconditions), removing DynamoDB costs and operational complexity.
+* **Environment-Scoped RBAC:** GitHub Environments (`staging` and `production`) inject their respective `AWS_ROLE_ARN` variables dynamically, ensuring strict boundaries between non-prod and prod assets.
+* **Shift-Left Security:** Automated Snyk Infrastructure-as-Code (IaC) vulnerability scanning runs on every Pull Request and acts as a pre-deployment gate before execution.
+* **Branch Protection & Rulesets:** GitHub Rulesets enforce pull request approvals, status check verification (`Terraform Plan (staging)`, `Terraform Plan (production)`), and prevent forced pushes/branch deletions on `main`.
+
+---
+
+## 3. Directory Layout
+
+```text
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                 # PR Verification: Lint, Snyk IaC scan, Speculative Plans
+│       ├── cd.yml                 # Delivery: Auto Staging Apply, Reviewer-gated Prod Apply
+│       └── sre.yml                # Observability: Scheduled CloudWatch alarms & log audits
+├── bootstrap/                     # AWS & GitHub Foundation (Applied locally once)
+│   └── main.tf                    # OIDC Provider, IAM Roles, S3 Bucket, Environments, Rulesets
+└── README.md
+
+
+4. Workflows & Pipelines
+
+Pipeline	Target File	Trigger	Purpose
+CI (PR Verification)	.github/workflows/ci.yml	pull_request to main	Validates formatting (terraform fmt), runs Snyk IaC scan, and runs speculative plans for Staging and Production.
+CD (Delivery)	.github/workflows/cd.yml	push to main	Pre-deployment Snyk check, automatic deploy to Staging, manual reviewer approval gate, deploy to Production.
+SRE (Observability)	.github/workflows/sre.yml	Cron (0 */6 * * *) & Manual	Queries active CloudWatch alarms in ALARM status and inspects recent log groups in us-east-1.
+
+5. Security & Trust Policy Specifications
+
+The GitHub Actions Subject Claim Structure
+
+GitHub Actions emits OIDC tokens formatted with internal account and repository IDs:
+
+repo:<github_owner>@<github_user_id>/<repo_name>@<repo_id>:environment:<environment_name>
+
+
+AWS IAM Trust Relationship
+
+To guarantee that tokens are accepted while remaining strictly isolated to the authorized owner account, the trust policy enforces:
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": [
+            "repo:jacksonlskit*capstone-carelink-infra*",
+            "repo:jacksonlskit*capstone-carelink-app*",
+            "repo:jacksonlskit*"
+          ]
+        }
+      }
+    }
+  ]
+}
+
+
+6. Initial Bootstrapping & Setup
+
+Because CI/CD pipelines rely on the IAM roles to authenticate, the bootstrap layer must be provisioned once from a local administrative workstation.
+
+Prerequisites
+
+⚬ Terraform CLI >= 1.10.0
+⚬ AWS CLI authenticated with local Administrator access
+⚬ GitHub Personal Access Token (Classic) with repo, admin:repo_hook, and workflow scopes
+
+Step 1: Deploy Bootstrap Infrastructure
+
+cd bootstrap
+
+# Export GitHub token for the GitHub Terraform provider
+export GITHUB_TOKEN="ghp_yourPersonalAccessTokenHere"
+
+# Initialize and deploy
+terraform init
+terraform apply
+
+
+This provisions:
+
+1. The AWS IAM OpenID Connect Provider (token.actions.githubusercontent.com).
+2. The remote S3 state bucket with AES256 encryption, bucket versioning, and public access blocks.
+3. IAM Roles: carelink-github-staging-role and carelink-github-production-role.
+4. GitHub Environments: staging and production (with manual approval gate on production).
+5. GitHub Environment Variables: AWS_ROLE_ARN pointing to the respective IAM roles.
+6. GitHub Global Variables: AWS_REGION and TF_STATE_BUCKET.
+7. GitHub Branch Protection Rulesets for main.
+
+Step 2: Configure Repository Secrets
+
+To enable automated security scans:
+
+1. Navigate to Settings > Secrets and variables > Actions on capstone-carelink-infra.
+2. Click New repository secret.
+3. Name: SNYK_TOKEN
+4. Value: Paste your Snyk API Token.
+
+7. Operating & Deployment Procedures
+
+Making Infrastructure Changes
+
+1. Create a feature branch:
+   git checkout -b feature/my-infrastructure-update
+   
+2. Commit changes and push to GitHub:
+   git add .
+   git commit -m "feat: add new resource"
+   git push origin feature/my-infrastructure-update
+   
+3. Open a Pull Request targeting main.
+4. Review the automated status checks in GitHub Actions:
+  ⚬ Terraform Lint & Validate
+  ⚬ Snyk IaC Security Scan
+  ⚬ Terraform Plan (staging)
+  ⚬ Terraform Plan (production)
+5. Once approved and checks pass, merge the Pull Request.
+
+Production Promotion
+
+1. Merging to main triggers .github/workflows/cd.yml.
+2. Staging applies automatically.
+3. The pipeline halts at the Deploy to Production stage.
+4. Go to Actions > Select the active run > Click Review deployments > Select production > Click Approve and deploy.
+
+Running Ad-Hoc SRE Diagnostics
+
+1. Go to Actions > SRE: Health & Monitoring Check.
+2. Click Run workflow > Select branch main.
+3. Check the output logs for active alarms or CloudWatch log group statistics.
