@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
+  id-token: write   # Required for GitHub OIDC token generation
   contents: read
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         run: terraform fmt -check
 
   # ---------------------------------------------------------------------------
-  # Snyk IaC Security Scan
+  # Snyk Security Scan
   # ---------------------------------------------------------------------------
   snyk-scan:
     name: "Snyk IaC Security Scan"
@@ -48,7 +48,7 @@ jobs:
           args: --severity-threshold=high
 
   # ---------------------------------------------------------------------------
-  # Staging Plan (Enforced by GitHub Ruleset)
+  # Staging Plan with OIDC Token Inspector
   # ---------------------------------------------------------------------------
   plan-staging:
     name: "Terraform Plan (staging)"
@@ -59,6 +59,19 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # DIAGNOSTIC STEP: Prints the exact JSON payload GitHub sends to AWS STS
+      # -----------------------------------------------------------------------
+      - name: Inspect GitHub OIDC Token
+        run: |
+          echo "=== Requesting OIDC Token from GitHub Runner ==="
+          RAW_TOKEN=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            -H "User-Agent: actions/runner" \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" | jq -r '.value')
+          
+          echo "=== Decoded OIDC Token Claims ==="
+          jq -R 'split(".") | .[1] | @base64d | fromjson' <<< "$RAW_TOKEN"
 
       - name: Configure AWS Credentials (Staging)
         uses: aws-actions/configure-aws-credentials@v4
@@ -83,7 +96,7 @@ jobs:
         run: terraform plan -no-color
 
   # ---------------------------------------------------------------------------
-  # Production Plan (Enforced by GitHub Ruleset)
+  # Production Plan
   # ---------------------------------------------------------------------------
   plan-production:
     name: "Terraform Plan (production)"

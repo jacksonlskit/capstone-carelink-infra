@@ -26,8 +26,8 @@ provider "github" {
 
 locals {
   github_owner = "jacksonlskit"
-  repo_infra   = "Capstone-CareLink-Infra"
-  repo_app     = "Capstone-CareLink-App"
+  repo_infra   = "capstone-carelink-infra"
+  repo_app     = "capstone-carelink-app"
   aws_region   = "us-east-1"
   oidc_url     = "https://token.actions.githubusercontent.com"
 }
@@ -49,6 +49,36 @@ resource "aws_iam_openid_connect_provider" "github" {
     "6938fd4d98bab03faadb97b34396831e3780aea1",
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
   ]
+}
+
+# -----------------------------------------------------------------------------
+# OIDC TRUST POLICY (SCOPED TO ACCOUNT - MATCHES ALL CASING & EVENTS)
+# -----------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "github_oidc_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${local.github_owner}/*"
+      ]
+    }
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -96,29 +126,8 @@ resource "aws_s3_bucket_public_access_block" "tf_state_block_public" {
 
 # Staging IAM Role
 resource "aws_iam_role" "staging" {
-  name = "carelink-github-staging-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = [
-              "repo:${local.github_owner}/${local.repo_infra}:environment:staging",
-              "repo:${local.github_owner}/${local.repo_app}:environment:staging"
-            ]
-          }
-        }
-      }
-    ]
-  })
+  name               = "carelink-github-staging-role"
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust.json
 }
 
 resource "aws_iam_role_policy_attachment" "staging_admin" {
@@ -128,29 +137,8 @@ resource "aws_iam_role_policy_attachment" "staging_admin" {
 
 # Production IAM Role
 resource "aws_iam_role" "production" {
-  name = "carelink-github-production-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = [
-              "repo:${local.github_owner}/${local.repo_infra}:environment:production",
-              "repo:${local.github_owner}/${local.repo_app}:environment:production"
-            ]
-          }
-        }
-      }
-    ]
-  })
+  name               = "carelink-github-production-role"
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust.json
 }
 
 resource "aws_iam_role_policy_attachment" "production_admin" {
@@ -172,7 +160,6 @@ resource "github_repository_environment" "infra_production" {
   repository  = local.repo_infra
   environment = "production"
 
-  # Production requires manual reviewer approval before deployment
   reviewers {
     users = [data.github_user.current.id]
   }
