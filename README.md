@@ -59,15 +59,47 @@ v
 
 ## 3. Directory Layout
 
+## Repository Structure
+
 ```text
+capstone-carelink-infra/
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml                 # PR Verification: Lint, Snyk IaC scan, Speculative Plans
-│       ├── cd.yml                 # Delivery: Auto Staging Apply, Reviewer-gated Prod Apply
-│       └── sre.yml                # Observability: Scheduled CloudWatch alarms & log audits
-├── bootstrap/                     # AWS & GitHub Foundation (Applied locally once)
-│   └── main.tf                    # OIDC Provider, IAM Roles, S3 Bucket, Environments, Rulesets
-└── README.md
+│       ├── ci.yml                     # PR verification: Lint, Snyk IaC scan, Speculative Plans
+│       ├── cd.yml                     # Delivery: Apply Staging, Reviewer Approval Gate, Apply Prod
+│       └── sre.yml                    # Observability: Scheduled CloudWatch alarms & log audits
+│
+├── adrs/                              # Phase 1: Architecture Decision Records (Minimum 4)
+│   ├── 0001-container-runtime-eks.md  # ADR: Selection of Amazon EKS over Amazon ECS
+│   ├── 0002-keyless-oidc-security.md  # ADR: GitHub Actions OIDC vs long-lived IAM keys
+│   ├── 0003-native-s3-state-locks.md  # ADR: Terraform 1.10+ native S3 locks vs DynamoDB
+│   └── 0004-database-availability.md  # ADR: Multi-AZ RDS & automated backup retention
+│
+├── docs/                              # Capstone Deliverables & Operational Documentation
+│   ├── architecture-diagram.png       # Live end-to-end architecture diagram
+│   ├── compliance-mapping.md          # Hard constraint compliance mapping matrix
+│   ├── monthly-cost-estimate.md       # Running monthly cost estimate for AWS resources
+│   └── incident-runbook.md            # SRE runbook for failover & incident response
+│
+├── environments/                      # Environment-specific variable overrides
+│   ├── staging.tfvars                 # Staging configuration (single NAT, db.t4g.small)
+│   └── production.tfvars              # Production configuration (Multi-AZ, high availability)
+│
+├── backend.tf                         # Empty S3 backend declaration (injected via CI/CD)
+├── providers.tf                       # AWS, Kubernetes, and Helm provider constraints
+├── variables.tf                       # Input variable declarations
+├── outputs.tf                         # Output values (EKS cluster endpoint, RDS endpoints, ECR URLs)
+│
+├── vpc.tf                             # Multi-AZ VPC: 3 Public & 3 Private Subnets + NAT Gateways
+├── kms.tf                             # Customer Managed Keys (CMK) for EBS, RDS, and Secrets
+├── eks.tf                             # EKS Cluster (v1.30), OIDC IRSA provider, Managed Node Groups
+├── eks-access.tf                      # EKS Access Entries & Policies for GitHub Actions OIDC roles
+├── ecr.tf                             # Amazon ECR repositories for all 4 microservices
+├── rds.tf                             # Multi-AZ RDS MySQL/PostgreSQL in private subnets (KMS encrypted)
+├── monitoring.tf                      # CloudWatch Alarms, SNS alert topics, and SRE Dashboard
+│
+├── .gitignore                         # Git exclusion rules (.terraform/, *.tfstate)
+└── README.md                          # Repository documentation, setup, and runbooks
 
 
 4. Workflows & Pipelines

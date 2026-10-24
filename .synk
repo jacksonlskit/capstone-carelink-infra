@@ -1,0 +1,6 @@
+version: v1.25.0
+ignore:
+  'SNYK-CC-TF-94':
+    - '*':
+        reason: 'Public EKS endpoint maintained to allow GitHub Actions CI/CD runners and distributed team access without private runner infrastructure. Authentication is enforced via IAM and Kubernetes RBAC.'
+        expires: 2026-12-31T00:00:00.000Z
