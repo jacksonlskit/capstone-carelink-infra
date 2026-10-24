@@ -13,7 +13,11 @@ jobs:
   cloudwatch-health-audit:
     name: "Audit CloudWatch Alarms & System Health"
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # Safeguard against stalled network or CLI calls
     environment: production  # Authorizes the runner using the Production OIDC role
+
+    env:
+      AWS_PAGER: "" # Disables pagination to prevent AWS CLI from hanging on large outputs
 
     steps:
       - name: Checkout Code
@@ -43,6 +47,8 @@ jobs:
           echo "Total active alarms: $COUNT"
           if [ "$COUNT" -gt "0" ]; then
             echo "::warning title=Active Alarms Detected::There are $COUNT alarms currently triggered in ${{ vars.AWS_REGION }}."
+            # Uncomment the line below if you want triggered alarms to fail the job (useful for email/Slack failure alerts)
+            # exit 1
           fi
 
       - name: Query Recent System Log Groups
