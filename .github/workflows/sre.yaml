@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: production  # Authorizes the runner using the Production OIDC role
 
+    defaults:
+      run:
+        working-directory: ./infra
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

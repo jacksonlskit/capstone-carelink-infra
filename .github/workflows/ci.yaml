@@ -17,6 +17,11 @@ jobs:
   lint:
     name: "Terraform Lint & Validate"
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./infra
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -44,7 +49,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          file: "."
+          file: "infra"
           args: --severity-threshold=high
 
   # ---------------------------------------------------------------------------
@@ -55,6 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, snyk-scan]
     environment: staging
+
+    defaults:
+      run:
+        working-directory: ./infra
 
     steps:
       - name: Checkout Code
@@ -103,6 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, snyk-scan]
     environment: production
+
+    defaults:
+      run:
+        working-directory: ./infra
 
     steps:
       - name: Checkout Code
