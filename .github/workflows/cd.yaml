@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Pre-deployment Security Gate
+  # Pre-deployment Security Gate (Runs at root to read .snyk file)
   # ---------------------------------------------------------------------------
   snyk-scan:
     name: "Snyk Pre-Deployment Security Check"
@@ -26,7 +26,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          file: "infra"
+          file: "."
           args: --severity-threshold=high
 
   # ---------------------------------------------------------------------------
