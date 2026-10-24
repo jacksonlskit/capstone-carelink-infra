@@ -17,6 +17,7 @@ jobs:
   snyk-scan:
     name: "Snyk Pre-Deployment Security Check"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -35,12 +36,16 @@ jobs:
   apply-staging:
     name: "Deploy to Staging"
     runs-on: ubuntu-latest
+    timeout-minutes: 45 # Apply requires headroom for EKS and RDS creation times
     needs: snyk-scan
     environment: staging
 
     defaults:
       run:
         working-directory: ./infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
 
     steps:
       - name: Checkout Code
@@ -60,13 +65,13 @@ jobs:
 
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=staging/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        run: terraform apply -input=false -var="environment=staging" -auto-approve -no-color
 
   # ---------------------------------------------------------------------------
   # Production Deployment (Requires Manual UI Approval)
@@ -74,12 +79,16 @@ jobs:
   apply-production:
     name: "Deploy to Production"
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: apply-staging
     environment: production  # Pauses run until approved in GitHub UI
 
     defaults:
       run:
         working-directory: ./infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
 
     steps:
       - name: Checkout Code
@@ -99,10 +108,10 @@ jobs:
 
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=production/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        run: terraform apply -input=false -var="environment=production" -auto-approve -no-color

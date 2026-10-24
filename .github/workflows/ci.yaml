@@ -17,6 +17,7 @@ jobs:
   lint:
     name: "Terraform Lint & Validate"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -40,6 +41,7 @@ jobs:
   snyk-scan:
     name: "Snyk IaC Security Scan"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -58,12 +60,16 @@ jobs:
   plan-staging:
     name: "Terraform Plan (staging)"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [lint, snyk-scan]
     environment: staging
 
     defaults:
       run:
         working-directory: ./infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
 
     steps:
       - name: Checkout Code
@@ -96,13 +102,13 @@ jobs:
 
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=staging/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Plan
-        run: terraform plan -no-color
+        run: terraform plan -input=false -var="environment=staging" -no-color
 
   # ---------------------------------------------------------------------------
   # Production Plan
@@ -110,12 +116,16 @@ jobs:
   plan-production:
     name: "Terraform Plan (production)"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [lint, snyk-scan]
     environment: production
 
     defaults:
       run:
         working-directory: ./infra
+
+    env:
+      TF_IN_AUTOMATION: "true"
 
     steps:
       - name: Checkout Code
@@ -135,10 +145,10 @@ jobs:
 
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=production/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Plan
-        run: terraform plan -no-color
+        run: terraform plan -input=false -var="environment=production" -no-color
