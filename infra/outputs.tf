@@ -9,14 +9,12 @@ output "vpc_id" {
 
 output "public_subnet_ids" {
   description = "Public subnet IDs"
-  # Works for both count and for_each implementations
-  value = try(aws_subnet.public[*].id, [for s in aws_subnet.public : s.id])
+  value       = try(aws_subnet.public[*].id, [for s in aws_subnet.public : s.id])
 }
 
 output "private_subnet_ids" {
   description = "Private subnet IDs"
-  # Works for both count and for_each implementations
-  value = try(aws_subnet.private[*].id, [for s in aws_subnet.private : s.id])
+  value       = try(aws_subnet.private[*].id, [for s in aws_subnet.private : s.id])
 }
 
 # ==============================================================================
@@ -50,11 +48,6 @@ output "eks_cluster_certificate_authority_data" {
 output "eks_cluster_security_group_id" {
   description = "Security group created by EKS to allow control plane and worker node communication"
   value       = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
-}
-
-output "eks_oidc_provider_arn" {
-  description = "OIDC Provider ARN used to configure IAM Roles for Service Accounts (IRSA)"
-  value       = try(aws_iam_openid_connect_provider.eks[0].arn, null)
 }
 
 output "eks_oidc_issuer_url" {
