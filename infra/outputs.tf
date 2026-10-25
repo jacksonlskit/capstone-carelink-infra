@@ -1,4 +1,13 @@
 # ==============================================================================
+# General & Environment Outputs
+# ==============================================================================
+
+output "name_prefix" {
+  description = "Common prefix applied to environment resources"
+  value       = local.name_prefix
+}
+
+# ==============================================================================
 # Networking Outputs
 # ==============================================================================
 
@@ -84,6 +93,16 @@ output "rds_master_secret_arns" {
 # ==============================================================================
 
 output "ecr_repository_urls" {
-  description = "ECR repository URLs by microservice"
+  description = "Map of microservice identifiers to their ECR repository URLs"
   value       = { for k, v in aws_ecr_repository.this : k => v.repository_url }
+}
+
+output "ecr_repository_arns" {
+  description = "Map of microservice identifiers to their ECR repository ARNs"
+  value       = { for k, v in aws_ecr_repository.this : k => v.arn }
+}
+
+output "ecr_repository_names" {
+  description = "Map of microservice identifiers to their deployed ECR repository names"
+  value       = { for k, v in aws_ecr_repository.this : k => v.name }
 }
