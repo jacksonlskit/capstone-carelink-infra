@@ -1,8 +1,11 @@
 resource "aws_ecr_repository" "this" {
   for_each = toset(var.microservices)
 
-  name                 = each.value
+  # Solution 1: Prefixes repository name per environment
+  name                 = "${local.name_prefix}-${each.value}"
   image_tag_mutability = "MUTABLE"
+
+  force_delete = var.environment != "production"
 
   image_scanning_configuration {
     scan_on_push = true
