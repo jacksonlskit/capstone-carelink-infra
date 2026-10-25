@@ -10,13 +10,13 @@ output "vpc_id" {
 output "public_subnet_ids" {
   description = "Public subnet IDs"
   # Works for both count and for_each implementations
-  value       = try(aws_subnet.public[*].id, [for s in aws_subnet.public : s.id])
+  value = try(aws_subnet.public[*].id, [for s in aws_subnet.public : s.id])
 }
 
 output "private_subnet_ids" {
   description = "Private subnet IDs"
   # Works for both count and for_each implementations
-  value       = try(aws_subnet.private[*].id, [for s in aws_subnet.private : s.id])
+  value = try(aws_subnet.private[*].id, [for s in aws_subnet.private : s.id])
 }
 
 # ==============================================================================
