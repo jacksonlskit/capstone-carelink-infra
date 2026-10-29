@@ -5,8 +5,9 @@ variable "project" {
 }
 
 variable "environment" {
-  description = "Deployment environment"
+  description = "Deployment environment (staging or production)"
   type        = string
+  default     = "staging"
 
   validation {
     condition     = contains(["staging", "production"], var.environment)
@@ -35,15 +36,27 @@ variable "single_nat_gateway" {
 
 # ---------- EKS ----------
 variable "eks_cluster_version" {
-  description = "EKS Kubernetes version"
+  description = "EKS Kubernetes version (must be a valid AWS EKS release, e.g., 1.30 or 1.31)"
   type        = string
-  default     = "1.34"
+  default     = "1.31"
 }
 
 variable "microservices" {
-  description = "Microservices that each get an ECR repository"
+  description = "List of microservice identifiers used to provision ECR repositories, IAM roles, and deployment manifests"
   type        = list(string)
-  default     = ["service-a", "service-b", "service-c", "service-d"] # replace with real names
+  default = [
+    "api-gateway",
+    "customers-service",
+    "vets-service",
+    "visits-service"
+  ]
+
+  validation {
+    condition = length(var.microservices) > 0 && alltrue([
+      for service in var.microservices : can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", service))
+    ])
+    error_message = "Each microservice name must be non-empty, use lowercase alphanumeric characters and hyphens, and cannot start or end with a hyphen."
+  }
 }
 
 # ---------- RDS ----------

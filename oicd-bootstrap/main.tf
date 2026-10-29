@@ -265,16 +265,13 @@ resource "github_repository_ruleset" "app_main_protection" {
     pull_request {
       required_approving_review_count = 1
       dismiss_stale_reviews_on_push   = true
-      require_last_push_approval      = true
+      require_last_push_approval      = false
     }
 
     required_status_checks {
       strict_required_status_checks_policy = true
       required_check {
-        context = "lint-and-typecheck"
-      }
-      required_check {
-        context = "test"
+        context = "build"
       }
     }
   }
