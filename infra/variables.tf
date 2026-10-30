@@ -123,3 +123,11 @@ locals {
     var.tags
   )
 }
+
+variable "admin_iam_arns" {
+  description = "List of IAM user or role ARNs granted cluster administrator access in EKS"
+  type        = list(string)
+  default = [
+    "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
+  ]
+}
