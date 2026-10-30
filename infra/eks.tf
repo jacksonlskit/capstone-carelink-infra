@@ -1,3 +1,7 @@
+# ==============================================================================
+# IAM Policies & Roles for EKS Control Plane
+# ==============================================================================
+
 data "aws_iam_policy_document" "eks_cluster_assume_role" {
   statement {
     effect  = "Allow"
@@ -6,18 +10,6 @@ data "aws_iam_policy_document" "eks_cluster_assume_role" {
     principals {
       type        = "Service"
       identifiers = ["eks.amazonaws.com"]
-    }
-  }
-}
-
-data "aws_iam_policy_document" "eks_node_assume_role" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
     }
   }
 }
@@ -33,6 +25,10 @@ resource "aws_iam_role_policy_attachment" "eks_cluster" {
   role       = aws_iam_role.eks_cluster.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
+
+# ==============================================================================
+# EKS Cluster Control Plane
+# ==============================================================================
 
 resource "aws_eks_cluster" "main" {
   name     = local.cluster_id
@@ -56,6 +52,44 @@ resource "aws_eks_cluster" "main" {
   depends_on = [aws_iam_role_policy_attachment.eks_cluster]
 }
 
+# ==============================================================================
+# EKS Access Entries (Kubernetes RBAC Access for IAM Principals)
+# ==============================================================================
+
+resource "aws_eks_access_entry" "jacksonlskit" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "jacksonlskit" {
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.jacksonlskit]
+}
+
+# ==============================================================================
+# IAM Policies & Roles for EKS Worker Nodes
+# ==============================================================================
+
+data "aws_iam_policy_document" "eks_node_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_iam_role" "eks_nodes" {
   name               = "${local.name_prefix}-eks-nodes"
   assume_role_policy = data.aws_iam_policy_document.eks_node_assume_role.json
@@ -73,6 +107,10 @@ resource "aws_iam_role_policy_attachment" "eks_nodes" {
   role       = aws_iam_role.eks_nodes.name
   policy_arn = each.value
 }
+
+# ==============================================================================
+# EKS Managed Node Group
+# ==============================================================================
 
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
