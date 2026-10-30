@@ -38,7 +38,7 @@ variable "single_nat_gateway" {
 variable "eks_cluster_version" {
   description = "EKS Kubernetes version (must be a valid AWS EKS release, e.g., 1.30 or 1.31)"
   type        = string
-  default     = "1.37"
+  default     = "1.31"
 }
 
 variable "microservices" {
