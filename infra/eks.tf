@@ -52,25 +52,27 @@ resource "aws_eks_cluster" "main" {
 }
 
 # ==============================================================================
-# EKS Access Entries (Kubernetes RBAC Access for IAM Principals)
+# EKS Access Entries (Kubernetes RBAC Access for Team IAM Principals)
 # ==============================================================================
 
-resource "aws_eks_access_entry" "jacksonlskit" {
+resource "aws_eks_access_entry" "team_admins" {
+  for_each      = toset(var.admin_iam_arns)
   cluster_name  = aws_eks_cluster.main.name
-  principal_arn = "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
+  principal_arn = each.value
   type          = "STANDARD"
 }
 
-resource "aws_eks_access_policy_association" "jacksonlskit" {
+resource "aws_eks_access_policy_association" "team_admins" {
+  for_each      = toset(var.admin_iam_arns)
   cluster_name  = aws_eks_cluster.main.name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  principal_arn = "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
+  principal_arn = each.value
 
   access_scope {
     type = "cluster"
   }
 
-  depends_on = [aws_eks_access_entry.jacksonlskit]
+  depends_on = [aws_eks_access_entry.team_admins]
 }
 
 # ==============================================================================
@@ -108,7 +110,7 @@ resource "aws_iam_role_policy_attachment" "eks_nodes" {
 }
 
 # ==============================================================================
-# EKS Managed Node Group
+# EKS Managed Node Group (2 x t3.medium Instances)
 # ==============================================================================
 
 resource "aws_eks_node_group" "main" {
@@ -121,8 +123,8 @@ resource "aws_eks_node_group" "main" {
   disk_size       = 20
 
   scaling_config {
-    desired_size = var.environment == "production" ? 2 : 1
-    min_size     = var.environment == "production" ? 2 : 1
+    desired_size = 2
+    min_size     = 2
     max_size     = 3
   }
 
