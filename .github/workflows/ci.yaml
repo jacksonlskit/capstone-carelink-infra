@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - 'feature/**'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +20,7 @@ jobs:
   lint:
     name: "Terraform Lint & Validate"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     defaults:
       run:
@@ -31,9 +34,16 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.0"
+          terraform_wrapper: false
 
       - name: Check Formatting
         run: terraform fmt -check
+
+      - name: Terraform Init (Validation only)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
 
   # ---------------------------------------------------------------------------
   # Snyk Security Scan (Runs at root to read .snyk file)
@@ -41,7 +51,8 @@ jobs:
   snyk-scan:
     name: "Snyk IaC Security Scan"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -99,6 +110,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.0"
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: |
@@ -142,6 +154,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.0"
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: |
