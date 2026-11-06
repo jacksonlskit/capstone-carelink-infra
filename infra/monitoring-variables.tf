@@ -143,7 +143,7 @@ variable "app_log_retention_days" {
   default     = null
 
   validation {
-    condition     = var.app_log_retention_days == null || contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731], var.app_log_retention_days)
+    condition     = var.app_log_retention_days == null ? true : contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731], var.app_log_retention_days)
     error_message = "Must be null or a retention value CloudWatch Logs accepts (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731)."
   }
 }
@@ -154,7 +154,7 @@ variable "audit_log_retention_days" {
   default     = null
 
   validation {
-    condition     = var.audit_log_retention_days == null || contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731], var.audit_log_retention_days)
+    condition     = var.audit_log_retention_days == null ? true : contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731], var.audit_log_retention_days)
     error_message = "Must be null or a retention value CloudWatch Logs accepts."
   }
 }
