@@ -131,5 +131,6 @@ variable "admin_iam_arns" {
     "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
     , "arn:aws:iam::255945442255:user/students/ce13/shil5ram"
     , "arn:aws:iam::255945442255:user/students/ce13/plainjon"
+    , "arn:aws:iam::255945442255:user/students/ce13/Krishnaveni-CE13"
   ]
 }
