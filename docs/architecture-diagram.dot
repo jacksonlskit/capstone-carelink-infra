@@ -1,0 +1,117 @@
+// CareLink architecture (EKS). Render: dot -Tpng -Gdpi=130 architecture-diagram.dot -o architecture-diagram.png
+// SOLID  = in the infra repo today (OIDC, S3 state, pipelines, rulesets) per the 23 Oct snapshot.
+// DASHED = planned (vpc.tf, kms.tf, eks.tf, eks-access.tf, ecr.tf, rds.tf, monitoring.tf), not yet in the repo.
+// The brief says the submitted diagram must show only what is ACTUALLY deployed:
+// as each file is applied, change its node(s) to solid; delete anything never built.
+digraph carelink {
+  rankdir=TB;
+  compound=true;
+  newrank=true;
+  fontname="Helvetica";
+  nodesep=0.35;
+  ranksep=0.55;
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#334155", penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=8, color="#475569", arrowsize=0.7];
+  labelloc=t;
+  label=<<B>CareLink Health: AWS architecture (EKS, v0.2 draft)</B><BR/><FONT POINT-SIZE="10">Clinics in Singapore and Malaysia, PDPA. Spring PetClinic Cloud, synthetic data. Hard constraints: 99.9% in clinic hours, encrypted and private patient data, RPO 24h / RTO 4h.</FONT>>;
+
+  users [label="Clinic staff\n(SG / MY, 08:00-20:00 SGT)", fillcolor="#fef3c7"];
+
+  subgraph cluster_gh {
+    label="GitHub (jacksonlskit): infra repo and app repo"; style="rounded,filled"; fillcolor="#f1f5f9"; color="#94a3b8"; fontsize=11;
+    repo_infra [label="capstone-carelink-infra\nTerraform + rulesets (PR + 1 review)"];
+    repo_app   [label="capstone-carelink-app\nPetClinic Cloud + Dockerfiles", style="rounded,filled,dashed"];
+    actions    [label="GitHub Actions\nci / cd / sre workflows\nSnyk IaC gate (fails on HIGH)"];
+    appscan    [label="App pipeline gates\nSCA + image scan\n(fail on HIGH/CRITICAL)", style="rounded,filled,dashed"];
+    env_stg    [label="Environment: staging\n(auto deploy)"];
+    env_prd    [label="Environment: production\n(manual approval gate)", fillcolor="#fee2e2"];
+    repo_infra -> actions; repo_app -> appscan -> actions;
+    actions -> env_stg; env_stg -> env_prd [label="promote"];
+  }
+
+  subgraph cluster_aws {
+    label="AWS account(s)"; style="rounded,filled"; fillcolor="#eff6ff"; color="#60a5fa"; fontsize=11;
+
+    subgraph cluster_ident {
+      label="Identity and state (BUILT: oicd-bootstrap)"; style="rounded,filled"; fillcolor="#dbeafe"; color="#93c5fd";
+      oidc   [label="IAM OIDC provider\ntoken.actions.githubusercontent.com"];
+      role_s [label="Role: staging\n(short-lived STS creds)"];
+      role_p [label="Role: production\n(only after approval)", fillcolor="#fee2e2"];
+      state  [label="S3 state bucket\nversioned, SSE, native lock\nkeys: staging/ production/"];
+      oidc -> role_s; oidc -> role_p;
+    }
+
+    ecr [label="Amazon ECR\n(one repo per service, scan on push)\necr.tf", style="rounded,filled,dashed"];
+    sm  [label="Secrets Manager\n(DB credentials)", style="rounded,filled,dashed"];
+    kms [label="KMS CMKs (kms.tf)\nEBS, RDS, Secrets; rotation on", style="rounded,filled,dashed"];
+
+    subgraph cluster_vpc {
+      label="VPC (vpc.tf), region us-east-1 (team decision): 3 public + 3 private subnets over 3 AZs\n(staging: single NAT; production intended NAT per AZ, see REPO-FINDINGS A1)"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#4ade80"; fontsize=11;
+
+      subgraph cluster_pub {
+        label="Public subnets"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
+        alb [label="Application Load Balancer\n(created by AWS Load Balancer\nController from the Ingress)\nHTTPS, health checks", style="rounded,filled,dashed"];
+        nat [label="NAT gateway(s)\n(egress only)", style="rounded,filled,dashed"];
+      }
+
+      subgraph cluster_eks {
+        label="Private subnets: EKS v1.37 (eks.tf, incl. access entries), managed node group t3.medium: 5 nodes (min 4, max 10) in both environments"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
+        gw  [label="api-gateway\n>=2 pods on different nodes/AZs", style="rounded,filled,dashed"];
+        cus [label="customers-service\n>=2 pods", style="rounded,filled,dashed"];
+        vet [label="vets-service\n>=2 pods", style="rounded,filled,dashed"];
+        vis [label="visits-service\n>=2 pods", style="rounded,filled,dashed"];
+        ci  [label="Container Insights agent\n+ Fluent Bit (add-on)", style="rounded,filled,dashed"];
+        gw -> cus; gw -> vet; gw -> vis;
+      }
+
+      subgraph cluster_data {
+        label="Private DB subnets (rds.tf): no public access"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
+        rds1 [label="RDS MySQL + RDS PostgreSQL (db.t4g.small each)\nencrypted at rest (CMK); TLS and audit logging NOT yet enforced\nproduction Multi-AZ intended (A1); staging single-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
+        rds2 [label="RDS standby (production, once A1 is fixed)\nsynchronous Multi-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
+        rds1 -> rds2 [label="sync replication", dir=both];
+      }
+    }
+
+    subgraph cluster_obs {
+      label="Observability and audit (SRE): monitoring.tf"; style="rounded,filled"; fillcolor="#fdf4ff"; color="#d8b4fe"; fontsize=11;
+      cwl  [label="CloudWatch Logs\n/aws/containerinsights/<cluster>/application\nretention 90d (DB audit 365d), CMK", style="rounded,filled,dashed"];
+      cwm  [label="CloudWatch metrics\nContainerInsights, ALB, RDS", style="rounded,filled,dashed"];
+      alm  [label="Alarms\nSLO burn (fast/slow), p95 latency,\nredundancy lost, nodes, RDS, error burst", style="rounded,filled,dashed"];
+      sns  [label="SNS (KMS-encrypted)", style="rounded,filled,dashed"];
+      mail [label="Email (on-call)", style="rounded,filled,dashed", fillcolor="#fef3c7"];
+      dash [label="Dashboard\n'is it healthy right now?'", style="rounded,filled,dashed"];
+      rdsev [label="RDS event subscription\nfailover / failure / backup", style="rounded,filled,dashed"];
+      ct   [label="CloudTrail -> Logs\nroot / denied / no-MFA alarms", style="rounded,filled,dashed"];
+      cwl -> alm [label="metric filter"]; cwm -> alm; alm -> sns; rdsev -> sns; sns -> mail; ct -> alm [style=dashed];
+      cwm -> dash; cwl -> dash; alm -> dash [label="status"];
+    }
+
+    subgraph cluster_bk {
+      label="Backup and recovery (RPO <= 24h, RTO <= 4h)"; style="rounded,filled,dashed"; fillcolor="#fff7ed"; color="#fdba74";
+      bk   [label="Automated backups + PITR\nretention >= 7 days", style="rounded,filled,dashed"];
+      rst  [label="Restore drill into STAGING\n(demo evidence, timed)", style="rounded,filled,dashed"];
+      bk -> rst;
+    }
+  }
+
+  users -> alb [label="HTTPS"];
+  alb -> gw;
+  cus -> rds1; vet -> rds1; vis -> rds1;
+  rds1 -> bk [label="daily snapshot"];
+
+  actions -> oidc [label="OIDC JWT -> STS", lhead=cluster_ident];
+  role_s -> state [label="plan/apply"]; role_p -> state;
+  role_s -> ecr [style=dashed]; role_p -> ecr [style=dashed];
+  ecr -> gw [style=dashed, label="image pull"];
+  sm -> cus [style=dashed, label="DB creds"];
+  kms -> rds1 [style=dashed];
+  ci -> cwl [style=dashed, label="pod logs"]; ci -> cwm [style=dashed, label="pod/node metrics"];
+  alb -> cwm [style=dashed]; rds1 -> cwm [style=dashed]; rds1 -> rdsev [style=dashed]; rds1 -> cwl [style=dashed, label="audit log"];
+
+  subgraph cluster_legend {
+    label="Legend"; style="rounded"; color="#94a3b8"; fontsize=10;
+    l1 [label="In the repo today"];
+    l2 [label="Planned: mark solid when applied,\nremove if never built", style="rounded,filled,dashed"];
+    l1 -> l2 [style=invis];
+  }
+}
