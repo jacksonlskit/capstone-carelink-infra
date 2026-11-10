@@ -23,7 +23,7 @@ Declare an incident, note the time (this is T+0 for the RTO clock), tell the cli
 
 ### 3A. Multi-AZ failover (expected case, minutes)
 - RDS promotes the standby; the endpoint DNS name stays the same and re-points, typically in 1-2 minutes. Replication was synchronous, so **data loss is about zero**.
-- Watch for stale connections: Java caches DNS and connection pools hold dead sockets. If errors persist after RDS shows `available`, force new connections by restarting/redeploying the services (`kubectl -n petclinic rollout restart deployment/<service>`), one service at a time so redundancy is kept.
+- Watch for stale connections: Java caches DNS and connection pools hold dead sockets. If errors persist after RDS shows `available`, force new connections by restarting/redeploying the services (`kubectl -n staging rollout restart deployment/<service>`), one service at a time so redundancy is kept.
 - Verify: dashboard availability back to 100%, a real read and write through the app, then close out.
 
 ### 3B. Instance unrecoverable: restore (budget about 1.5-2 h)

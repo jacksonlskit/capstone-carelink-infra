@@ -67,9 +67,9 @@ variable "cloudtrail_log_group_name" {
 }
 
 variable "k8s_namespace" {
-  description = "Kubernetes namespace the PetClinic services run in."
+  description = "Kubernetes namespace the application services run in. Empty = use the environment name (the app repo deploys to namespace `staging` / `production`)."
   type        = string
-  default     = "petclinic"
+  default     = ""
 }
 
 # ---- SLOs --------------------------------------------------------------------
