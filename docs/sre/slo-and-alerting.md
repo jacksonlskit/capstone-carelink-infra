@@ -32,7 +32,7 @@
 
 1. Confirm the SNS email subscription is **Confirmed** (not PendingConfirmation).
 2. Open the dashboard; all tiles green.
-3. On staging: `kubectl -n petclinic scale deployment/<service> --replicas=1` (or drain one node: `kubectl drain <node> --ignore-daemonsets`). Show the site still responds. Note: merely deleting a pod self-heals in seconds, usually faster than the 2-minute alarm window, so use it to show self-healing, not to trip the alert.
+3. On staging: `kubectl -n staging scale deployment/<service> --replicas=1` (or drain one node: `kubectl drain <node> --ignore-daemonsets`). Show the site still responds. Note: merely deleting a pod self-heals in seconds, usually faster than the 2-minute alarm window, so use it to show self-healing, not to trip the alert.
 4. Within about 2-3 minutes `<service>-redundancy-lost` goes red and the email arrives. Scale back to 2: the tile returns green and an OK email follows.
 5. Optional second alert: force an error burst or p95 breach with the load generator.
 

@@ -20,6 +20,7 @@ locals {
   cluster_name  = local.cluster_id # "<project>-<env>-eks", defined in vpc.tf
   ci_prefix     = "/aws/containerinsights/${local.cluster_name}"
   is_production = var.environment == "production"
+  k8s_namespace = var.k8s_namespace != "" ? var.k8s_namespace : var.environment
 
   app_retention   = var.app_log_retention_days != null ? var.app_log_retention_days : (local.is_production ? 90 : 14)
   audit_retention = var.audit_log_retention_days != null ? var.audit_log_retention_days : (local.is_production ? 365 : 90)
@@ -540,7 +541,7 @@ resource "aws_cloudwatch_metric_alarm" "pods_running_low" {
   alarm_description   = "${each.key} has fewer than ${var.min_running_pods_per_service} running pods. May still be up on one pod, but there is now a single point of failure. See runbook."
   namespace           = "ContainerInsights"
   metric_name         = "service_number_of_running_pods"
-  dimensions          = { ClusterName = local.cluster_name, Namespace = var.k8s_namespace, Service = each.key }
+  dimensions          = { ClusterName = local.cluster_name, Namespace = local.k8s_namespace, Service = each.key }
   statistic           = "Minimum"
   period              = 60
   evaluation_periods  = 2
@@ -779,7 +780,7 @@ locals {
         stat   = "Minimum"
         metrics = [
           for svc in var.microservices :
-          ["ContainerInsights", "service_number_of_running_pods", "ClusterName", local.cluster_name, "Namespace", var.k8s_namespace, "Service", svc, { label = svc }]
+          ["ContainerInsights", "service_number_of_running_pods", "ClusterName", local.cluster_name, "Namespace", local.k8s_namespace, "Service", svc, { label = svc }]
         ]
         yAxis = { left = { min = 0 } }
       }
