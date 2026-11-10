@@ -835,12 +835,12 @@ locals {
         view   = "timeSeries"
         period = 300
         stat   = "Average"
-        metrics = flatten([
-          for k, v in aws_db_instance.main : [
-            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", v.identifier, { id = "fs_${k}", visible = false }],
-            [{ expression = "fs_${k} / 1073741824", label = "${k} free GiB", id = "fsg_${k}" }],
-          ]
-        ])
+        # concat, not flatten: flatten() also flattens each metric row, and the
+        # dashboard API then rejects "metrics" (it must be an array of arrays).
+        metrics = concat(
+          [for k, v in aws_db_instance.main : ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", v.identifier, { id = "fs_${k}", visible = false }]],
+          [for k, v in aws_db_instance.main : [{ expression = "fs_${k} / 1073741824", label = "${k} free GiB", id = "fsg_${k}" }]],
+        )
       }
     },
   ]
