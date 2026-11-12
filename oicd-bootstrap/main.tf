@@ -14,6 +14,14 @@ terraform {
 
 provider "aws" {
   region = local.aws_region
+
+  # The nightly cleanup skips resources tagged with the team's exact value
+  # (case-sensitive). Most important here: the Terraform state bucket.
+  default_tags {
+    tags = {
+      Project = "capstone-project-group-03"
+    }
+  }
 }
 
 provider "github" {
@@ -313,6 +321,69 @@ resource "github_repository_ruleset" "infra_main_protection" {
 }
 
 # -----------------------------------------------------------------------------
+# 5. APP TLS CERTIFICATES (ACM, DNS-validated)
+# -----------------------------------------------------------------------------
+# These live here and not in infra/ because the nightly wipe deletes the
+# environments (EKS, RDS, VPC) and empties the infra state bucket, but leaves
+# ACM certificates and Route 53 records in place. This layer's state is kept
+# between days, so Terraform keeps managing the same certificate instead of
+# creating a duplicate every morning (and recreates it if it is ever removed).
+#
+# The ALB Ingress lists the hostname under spec.tls.hosts and the AWS Load
+# Balancer Controller finds the certificate by that hostname. The hostname's
+# A record is written by external-dns in each cluster (infra/dns.tf).
+
+locals {
+  app_dns_zone = "sctp-sandbox.com"
+  app_hostnames = {
+    staging    = "carelink-staging.${local.app_dns_zone}"
+    production = "carelink-production.${local.app_dns_zone}"
+  }
+}
+
+data "aws_route53_zone" "sandbox" {
+  name         = local.app_dns_zone
+  private_zone = false
+}
+
+resource "aws_acm_certificate" "app" {
+  for_each = local.app_hostnames
+
+  domain_name       = each.value
+  validation_method = "DNS"
+  key_algorithm     = "RSA_2048"
+
+  # Project comes from the provider's default_tags; setting it here would override it.
+  tags = {
+    Environment = each.key
+    ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "app_cert_validation" {
+  for_each = aws_acm_certificate.app
+
+  zone_id         = data.aws_route53_zone.sandbox.zone_id
+  name            = one(each.value.domain_validation_options).resource_record_name
+  type            = one(each.value.domain_validation_options).resource_record_type
+  records         = [one(each.value.domain_validation_options).resource_record_value]
+  ttl             = 300
+  allow_overwrite = true
+}
+
+resource "aws_acm_certificate_validation" "app" {
+  for_each = aws_acm_certificate.app
+
+  certificate_arn         = each.value.arn
+  validation_record_fqdns = [aws_route53_record.app_cert_validation[each.key].fqdn]
+}
+
+
+# -----------------------------------------------------------------------------
 # OUTPUTS
 # -----------------------------------------------------------------------------
 
@@ -329,4 +400,9 @@ output "staging_role_arn" {
 output "production_role_arn" {
   description = "IAM Role ARN for Production environment workflows"
   value       = aws_iam_role.production.arn
+}
+
+output "app_certificate_arns" {
+  description = "ACM certificate ARNs per environment for the app ALB (found by hostname by the Load Balancer Controller)"
+  value       = { for env, v in aws_acm_certificate_validation.app : env => v.certificate_arn }
 }

@@ -4,6 +4,17 @@ variable "project" {
   default     = "carelink"
 }
 
+variable "cohort_project_tag" {
+  description = "Value of the Project tag on every AWS resource. The instructors' nightly cleanup skips resources tagged with the team's exact value (case-sensitive)."
+  type        = string
+  default     = "capstone-project-group-03"
+
+  validation {
+    condition     = can(regex("^capstone-project-group-[0-9]{2}$", var.cohort_project_tag))
+    error_message = "cohort_project_tag must look exactly like capstone-project-group-03 (lowercase, two-digit group)."
+  }
+}
+
 variable "environment" {
   description = "Deployment environment (staging or production)"
   type        = string
@@ -114,9 +125,11 @@ variable "tags" {
 locals {
   name_prefix = "${var.project}-${var.environment}"
 
+  # Project is NOT set here: it comes from the provider's default_tags
+  # (providers.tf). A Project key on a resource would override the default and
+  # remove the cleanup protection, so do not add one here or in var.tags.
   common_tags = merge(
     {
-      Project     = var.project
       Environment = var.environment
       ManagedBy   = "terraform"
     },
@@ -139,13 +152,4 @@ variable "dns_zone_name" {
   description = "Public Route 53 zone that holds the application hostname <project>-<environment>.<zone>"
   type        = string
   default     = "sctp-sandbox.com"
-}
-
-variable "app_alb_ready" {
-  description = "Per environment: true once the app Ingress has created its ALB, so the hostname A record can point at it. The pipeline passes only -var=environment, so this is keyed by environment."
-  type        = map(bool)
-  default = {
-    staging    = true
-    production = false
-  }
 }

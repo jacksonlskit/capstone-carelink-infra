@@ -1,19 +1,22 @@
 # ==============================================================================
-# Public hostname and TLS certificate for the application ALB
+# Public hostname for the application ALB (external-dns)
 # ------------------------------------------------------------------------------
-# The ALB is not created here: the AWS Load Balancer Controller (lbc.tf) creates
-# it from the app repo's Ingress. That Ingress lists this hostname under
-# spec.tls.hosts, and the controller finds the matching ACM certificate by
-# hostname, so no certificate ARN has to be copied between repos.
+# The environment is torn down every night and rebuilt from empty state, and the
+# ALB is created later by the app pipeline (AWS Load Balancer Controller acting
+# on the app repo's Ingress), so its DNS name is new every day. Terraform cannot
+# point a record at an ALB that does not exist yet. external-dns runs in the
+# cluster and keeps carelink-<environment>.sctp-sandbox.com pointed at whichever
+# ALB the Ingress has today, driven by this Ingress annotation:
 #
-#   carelink-<environment>.sctp-sandbox.com  --A alias-->  ALB  -->  api-gateway
+#   external-dns.alpha.kubernetes.io/hostname: carelink-<environment>.sctp-sandbox.com
+#
+# TLS: the ACM certificate for this hostname lives in oicd-bootstrap/main.tf,
+# because ACM certificates and Route 53 records survive the nightly wipe. The
+# controller finds it by hostname (the Ingress lists it under spec.tls.hosts).
 # ==============================================================================
 
 locals {
   app_hostname = "${local.name_prefix}.${var.dns_zone_name}"
-
-  # The A record can only point at the ALB once the Ingress has created it.
-  app_alb_ready = lookup(var.app_alb_ready, var.environment, false)
 }
 
 # Shared cohort zone; teams add records named <team>-<app>.sctp-sandbox.com.
@@ -23,63 +26,100 @@ data "aws_route53_zone" "sandbox" {
 }
 
 # ------------------------------------------------------------------------------
-# ACM certificate (DNS-validated, renewed automatically by ACM)
+# IAM role for the external-dns service account (IRSA), limited to this zone
 # ------------------------------------------------------------------------------
-resource "aws_acm_certificate" "app" {
-  domain_name       = local.app_hostname
-  validation_method = "DNS"
-  key_algorithm     = "RSA_2048"
+data "aws_iam_policy_document" "external_dns_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:external-dns"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "external_dns" {
+  name               = "${local.name_prefix}-external-dns-role"
+  assume_role_policy = data.aws_iam_policy_document.external_dns_assume_role.json
 
   tags = local.common_tags
+}
 
-  lifecycle {
-    create_before_destroy = true
+data "aws_iam_policy_document" "external_dns" {
+  statement {
+    sid = "ChangeRecordsInSandboxZoneOnly"
+    actions = [
+      "route53:ChangeResourceRecordSets",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResources",
+    ]
+    resources = [data.aws_route53_zone.sandbox.arn]
+  }
+
+  statement {
+    sid       = "FindZones"
+    actions   = ["route53:ListHostedZones"]
+    resources = ["*"]
   }
 }
 
-resource "aws_route53_record" "app_cert_validation" {
-  for_each = {
-    for dvo in aws_acm_certificate.app.domain_validation_options : dvo.domain_name => dvo
-  }
-
-  zone_id         = data.aws_route53_zone.sandbox.zone_id
-  name            = each.value.resource_record_name
-  type            = each.value.resource_record_type
-  records         = [each.value.resource_record_value]
-  ttl             = 300
-  allow_overwrite = true
-}
-
-# Waits until ACM reports the certificate as issued.
-resource "aws_acm_certificate_validation" "app" {
-  certificate_arn         = aws_acm_certificate.app.arn
-  validation_record_fqdns = [for r in aws_route53_record.app_cert_validation : r.fqdn]
+resource "aws_iam_role_policy" "external_dns" {
+  name   = "${local.name_prefix}-external-dns"
+  role   = aws_iam_role.external_dns.id
+  policy = data.aws_iam_policy_document.external_dns.json
 }
 
 # ------------------------------------------------------------------------------
-# Hostname -> ALB
+# external-dns
 # ------------------------------------------------------------------------------
-# Found by the tags the controller puts on the ALB it creates for the Ingress
-# <namespace>/carelink-alb-ingress (the namespace matches the environment name).
-data "aws_lb" "app_ingress" {
-  count = local.app_alb_ready ? 1 : 0
+# upsert-only: creates and updates records but never deletes, which is the safe
+# choice in a zone shared with other teams. It only changes records it owns,
+# marked by TXT records carrying txtOwnerId (the cluster name, which stays the
+# same across nightly rebuilds, so each day's cluster takes over the record).
+resource "helm_release" "external_dns" {
+  name       = "external-dns"
+  namespace  = "kube-system"
+  repository = "https://kubernetes-sigs.github.io/external-dns/"
+  chart      = "external-dns"
+  version    = "1.23.0"
 
-  tags = {
-    "elbv2.k8s.aws/cluster" = aws_eks_cluster.main.name
-    "ingress.k8s.aws/stack" = "${var.environment}/carelink-alb-ingress"
-  }
-}
+  values = [yamlencode({
+    provider      = { name = "aws" }
+    policy        = "upsert-only"
+    registry      = "txt"
+    txtOwnerId    = aws_eks_cluster.main.name
+    sources       = ["ingress"]
+    domainFilters = [var.dns_zone_name]
+    extraArgs = [
+      "--zone-id-filter=${data.aws_route53_zone.sandbox.zone_id}",
+      "--aws-zone-type=public",
+    ]
+    env = [{ name = "AWS_DEFAULT_REGION", value = var.aws_region }]
+    serviceAccount = {
+      create = true
+      name   = "external-dns"
+      annotations = {
+        "eks.amazonaws.com/role-arn" = aws_iam_role.external_dns.arn
+      }
+    }
+  })]
 
-resource "aws_route53_record" "app" {
-  count = local.app_alb_ready ? 1 : 0
-
-  zone_id = data.aws_route53_zone.sandbox.zone_id
-  name    = local.app_hostname
-  type    = "A"
-
-  alias {
-    name                   = "dualstack.${data.aws_lb.app_ingress[0].dns_name}"
-    zone_id                = data.aws_lb.app_ingress[0].zone_id
-    evaluate_target_health = true
-  }
+  depends_on = [
+    aws_iam_role_policy.external_dns,
+    aws_eks_node_group.main,
+  ]
 }
