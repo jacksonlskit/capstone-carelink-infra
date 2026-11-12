@@ -19,6 +19,15 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  # Added to every AWS resource Terraform creates. Resources tagged
+  # Project = capstone-project-group-03 are skipped by the nightly cleanup
+  # (best effort, so the stack must still rebuild cleanly from code).
+  default_tags {
+    tags = {
+      Project = var.cohort_project_tag
+    }
+  }
 }
 
 provider "kubernetes" {

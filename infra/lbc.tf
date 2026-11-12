@@ -61,6 +61,12 @@ resource "helm_release" "lbc" {
     clusterName = aws_eks_cluster.main.name
     region      = var.aws_region
     vpcId       = aws_vpc.main.id
+    # The ALB, target groups and security groups are created by the controller,
+    # not Terraform, so the provider's default_tags never reach them.
+    defaultTags = {
+      Project     = var.cohort_project_tag
+      Environment = var.environment
+    }
     serviceAccount = {
       create = true
       name   = "aws-load-balancer-controller"
