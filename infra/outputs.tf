@@ -117,11 +117,6 @@ output "app_hostname" {
 }
 
 output "app_url" {
-  description = "Application URL; the DNS record exists only once app_alb_ready is true for this environment"
-  value       = local.app_alb_ready ? "https://${local.app_hostname}" : null
-}
-
-output "app_certificate_arn" {
-  description = "ACM certificate the ALB Ingress uses for HTTPS"
-  value       = aws_acm_certificate_validation.app.certificate_arn
+  description = "Application URL; resolves once the app pipeline has deployed the Ingress and external-dns has written the record"
+  value       = "https://${local.app_hostname}"
 }
