@@ -134,3 +134,18 @@ variable "admin_iam_arns" {
     , "arn:aws:iam::255945442255:user/students/ce13/Krishnaveni-CE13"
   ]
 }
+
+variable "dns_zone_name" {
+  description = "Public Route 53 zone that holds the application hostname <project>-<environment>.<zone>"
+  type        = string
+  default     = "sctp-sandbox.com"
+}
+
+variable "app_alb_ready" {
+  description = "Per environment: true once the app Ingress has created its ALB, so the hostname A record can point at it. The pipeline passes only -var=environment, so this is keyed by environment."
+  type        = map(bool)
+  default = {
+    staging    = true
+    production = false
+  }
+}

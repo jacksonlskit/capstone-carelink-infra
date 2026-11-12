@@ -106,3 +106,22 @@ output "ecr_repository_names" {
   description = "Map of microservice identifiers to their deployed ECR repository names"
   value       = { for k, v in aws_ecr_repository.this : k => v.name }
 }
+
+# ==============================================================================
+# Application Endpoint (dns.tf)
+# ==============================================================================
+
+output "app_hostname" {
+  description = "Public hostname of the application (HTTPS)"
+  value       = local.app_hostname
+}
+
+output "app_url" {
+  description = "Application URL; the DNS record exists only once app_alb_ready is true for this environment"
+  value       = local.app_alb_ready ? "https://${local.app_hostname}" : null
+}
+
+output "app_certificate_arn" {
+  description = "ACM certificate the ALB Ingress uses for HTTPS"
+  value       = aws_acm_certificate_validation.app.certificate_arn
+}
