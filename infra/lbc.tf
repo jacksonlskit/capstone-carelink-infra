@@ -46,3 +46,32 @@ resource "aws_iam_role_policy_attachment" "lbc" {
   role       = aws_iam_role.lbc.name
   policy_arn = "arn:aws:iam::255945442255:policy/AWSLoadBalancerControllerIAMPolicy"
 }
+
+# 4. Install the controller. It watches Ingress objects and creates the ALB for
+#    them (the app repo's k8s/overlays/<env>/ingress.yaml). The service account
+#    uses the IRSA role above.
+resource "helm_release" "lbc" {
+  name       = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = "3.6.2"
+
+  values = [yamlencode({
+    clusterName = aws_eks_cluster.main.name
+    region      = var.aws_region
+    vpcId       = aws_vpc.main.id
+    serviceAccount = {
+      create = true
+      name   = "aws-load-balancer-controller"
+      annotations = {
+        "eks.amazonaws.com/role-arn" = aws_iam_role.lbc.arn
+      }
+    }
+  })]
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lbc,
+    aws_eks_node_group.main,
+  ]
+}
