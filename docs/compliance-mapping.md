@@ -38,7 +38,7 @@
 |---|---|---|---|
 | Automated backups | `backup_retention_period = var.db_backup_retention_days` (default 7), `backup_window = 17:00-18:00 UTC` (01:00-02:00 SGT), `copy_tags_to_snapshot` (`rds.tf`) | **Met in code** | `describe-db-instances` -> `BackupRetentionPeriod: 7`, `LatestRestorableTime` |
 | RPO <= 24 h | Daily backup plus point-in-time recovery (automatic when retention > 0): realistic RPO of minutes; Multi-AZ synchronous standby for instance failure | **Met in code** for backups; Multi-AZ **Gap** in production (A1) | `LatestRestorableTime` within minutes of now |
-| RTO <= 4 h | Failover (minutes) or restore-from-backup; runbook timeline `docs/incident-runbook.md`, with a timed drill | **Not yet proven**: drill not run | Drill record table filled in with real timestamps |
+| RTO <= 4 h | Failover (minutes) or restore-from-backup; runbook timeline `docs/sre/runbooks/db-instance-failure.md`, with a timed drill | **Not yet proven**: drill not run | Drill record table filled in with real timestamps |
 | **Demonstrate a restore** (staging acceptable) | Take a manual snapshot (staging uses `skip_final_snapshot`, and automated backups vanish if the instance is destroyed: A6), restore it to a new instance, verify data | **Not done** [Jon/Krisna] | `restore-db-instance-from-db-snapshot` output, timings, row-count check |
 | Notice a database failure quickly | RDS event subscription and saturation alarms (`monitoring.tf`) | **Written**, not merged | Test alert email; RDS event in the inbox |
 

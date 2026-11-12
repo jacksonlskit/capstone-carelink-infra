@@ -79,7 +79,7 @@ capstone-carelink-infra/
 │   ├── architecture-diagram.png       # Live end-to-end architecture diagram
 │   ├── compliance-mapping.md          # Hard constraint compliance mapping matrix
 │   ├── monthly-cost-estimate.md       # Running monthly cost estimate for AWS resources
-│   └── incident-runbook.md            # SRE runbook for failover & incident response
+│   └── sre/runbooks/db-instance-failure.md            # SRE runbook for failover & incident response
 │
 ├── environments/                      # Environment-specific variable overrides
 │   ├── staging.tfvars                 # Staging configuration (single NAT, db.t4g.small)

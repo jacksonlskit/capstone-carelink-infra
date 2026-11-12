@@ -36,7 +36,7 @@ CareLink runs a telehealth booking and consultation-notes platform for clinics i
 | DB not public | Private DB subnets, `publicly_accessible=false`, SG allows only node/pod traffic on the DB port | SG listing; failed connection from outside. |
 | Data access restricted and logged | No standing human DB access; EKS access entries scoped (eks-access.tf); DB audit/error logs to CloudWatch (365 d); CloudTrail with alarms | Audit log group; CloudTrail event; security alarms. |
 | RPO <= 24 h | Automated backups + PITR, >= 7 d retention | Backup retention, latest restorable time. |
-| RTO <= 4 h | Multi-AZ failover; documented restore runbook with timed staging drill | Drill record in `docs/incident-runbook.md`. |
+| RTO <= 4 h | Multi-AZ failover; documented restore runbook with timed staging drill | Drill record in `docs/sre/runbooks/db-instance-failure.md`. |
 | Staging cannot touch production | Per-environment roles, separate state keys, account guard-rail | Trust policy JSON; failed cross-environment attempt (REVIEW-NOTES items 1-2). |
 
 ## 4. Monthly cost estimate (full version: `docs/monthly-cost-estimate.md`)
