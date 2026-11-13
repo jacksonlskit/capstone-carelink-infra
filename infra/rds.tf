@@ -57,8 +57,11 @@ resource "aws_db_instance" "main" {
   storage_encrypted     = true
   kms_key_id            = aws_kms_key.this["rds"].arn
 
-  multi_az               = var.rds_multi_az
-  db_subnet_group_name   = aws_db_subnet_group.main.name
+  multi_az             = var.rds_multi_az
+  db_subnet_group_name = aws_db_subnet_group.main.name
+  # MySQL refuses connections without TLS (parameter group below). Other
+  # engines keep the AWS default group (null = leave it unchanged).
+  parameter_group_name   = each.value.engine == "mysql" ? aws_db_parameter_group.mysql.name : null
   vpc_security_group_ids = [aws_security_group.rds[each.key].id]
   publicly_accessible    = false
 
@@ -90,4 +93,31 @@ resource "aws_db_instance" "main" {
       engine_version,
     ]
   }
+}
+
+# ------------------------------------------------------------------------------
+# MySQL: encryption in transit is enforced by the server
+# ------------------------------------------------------------------------------
+# require_secure_transport = ON makes MySQL reject any client that connects
+# without TLS ("Connections using insecure transport are prohibited"), so a
+# misconfigured client cannot send patient data in clear text (Use Case B:
+# encrypted in transit). The app connects with sslMode=REQUIRED.
+#
+# Switching an instance to a new parameter group only takes effect after a
+# reboot: about 1-2 minutes of database downtime, done once per environment
+# (see docs/sre/runbooks/database-tls-and-persistence.md).
+resource "aws_db_parameter_group" "mysql" {
+  name        = "${local.name_prefix}-mysql"
+  family      = "mysql8.0"
+  description = "${local.name_prefix} MySQL: TLS required for every connection"
+
+  parameter {
+    name         = "require_secure_transport"
+    value        = "1"
+    apply_method = "immediate"
+  }
+
+  # Fixed name: scripts/generate-imports.sh finds it by name after the nightly
+  # cleanup deletes the Terraform state.
+  tags = { Name = "${local.name_prefix}-mysql" }
 }

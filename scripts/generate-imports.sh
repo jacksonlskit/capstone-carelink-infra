@@ -119,6 +119,8 @@ lookup() { # prints the import ID for one resource, or nothing if it does not ex
     # ---- database --------------------------------------------------------------
     aws_db_subnet_group)
       aws_q rds describe-db-subnet-groups --db-subnet-group-name "$name" --query 'DBSubnetGroups[0].DBSubnetGroupName' ;;
+    aws_db_parameter_group)
+      aws_q rds describe-db-parameter-groups --db-parameter-group-name "$name" --query 'DBParameterGroups[0].DBParameterGroupName' ;;
     aws_db_instance)
       aws_q rds describe-db-instances --db-instance-identifier "$(field "$r" .after.identifier)" \
         --query "DBInstances[?DBInstanceStatus!='deleting'] | [0].DBInstanceIdentifier" ;;
