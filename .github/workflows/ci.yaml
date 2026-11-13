@@ -119,6 +119,11 @@ jobs:
             -backend-config="key=staging/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
+      # Read-only here: it only writes infra/imports.auto.tf on the runner so
+      # the plan below shows what the deploy would import (see cd.yaml).
+      - name: Recover state if the nightly cleanup deleted it
+        run: ../scripts/recover-state.sh staging
+
       - name: Terraform Plan
         run: terraform plan -input=false -var="environment=staging" -no-color
 
@@ -162,6 +167,9 @@ jobs:
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=production/terraform.tfstate" \
             -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Recover state if the nightly cleanup deleted it
+        run: ../scripts/recover-state.sh production
 
       - name: Terraform Plan
         run: terraform plan -input=false -var="environment=production" -no-color
