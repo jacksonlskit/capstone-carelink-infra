@@ -14,6 +14,8 @@
 #                                               and nodes lose connectivity
 #
 # All three happened on 2026-11-13. These resources add the tag afterwards.
+# The nodes themselves (instances, disks, network interfaces) are tagged at
+# launch by our own launch template (aws_launch_template.nodes in eks.tf).
 #
 # What tags cannot protect (the cleanup checks them on their own, not through
 # their parent): IAM policy attachments and the Terraform state objects in S3.
@@ -21,8 +23,8 @@
 # scripts/recover-state.sh.
 # ==============================================================================
 
-# 1. Auto Scaling group, and every instance it launches from now on.
-#    Instances already running get the tag the next time they are replaced.
+# 1. Auto Scaling group. (propagate_at_launch duplicates the launch template's
+#    instance tag; kept so the protection does not depend on one mechanism.)
 resource "aws_autoscaling_group_tag" "nodes_project" {
   autoscaling_group_name = aws_eks_node_group.main.resources[0].autoscaling_groups[0].name
 
@@ -33,8 +35,9 @@ resource "aws_autoscaling_group_tag" "nodes_project" {
   }
 }
 
-# 2. Launch template. EKS always generates its own launch template for a managed
-#    node group; its ID is only visible on the Auto Scaling group.
+# 2. Launch template. The Auto Scaling group may use a launch template EKS
+#    derives from ours rather than ours directly; whichever it is, its ID is
+#    only visible on the Auto Scaling group, so tag what the group really uses.
 data "aws_autoscaling_group" "nodes" {
   name = aws_eks_node_group.main.resources[0].autoscaling_groups[0].name
 }
