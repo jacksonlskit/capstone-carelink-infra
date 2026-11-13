@@ -50,6 +50,17 @@ resource "aws_eks_cluster" "main" {
   tags = local.common_tags
 
   depends_on = [aws_iam_role_policy_attachment.eks_cluster]
+
+  lifecycle {
+    # Creation-only settings that AWS does not report back. After the cluster is
+    # re-imported into an empty state (scripts/recover-state.sh) Terraform would
+    # see them as changed and plan to REPLACE the whole cluster. They only matter
+    # when the cluster is first created, so later differences are ignored.
+    ignore_changes = [
+      bootstrap_self_managed_addons,
+      access_config[0].bootstrap_cluster_creator_admin_permissions,
+    ]
+  }
 }
 
 # ==============================================================================
@@ -115,13 +126,17 @@ resource "aws_iam_role_policy_attachment" "eks_nodes" {
 # ==============================================================================
 
 resource "aws_eks_node_group" "main" {
-  cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "${local.name_prefix}-workers"
-  node_role_arn   = aws_iam_role.eks_nodes.arn
-  subnet_ids      = aws_subnet.private[*].id
-  instance_types  = ["t3.medium"]
-  capacity_type   = "ON_DEMAND"
-  disk_size       = 50
+  cluster_name = aws_eks_cluster.main.name
+  # A name prefix (Terraform adds a unique suffix) together with
+  # create_before_destroy below: when the node group has to be replaced, the new
+  # nodes are created and Ready before the old group is drained and deleted, so
+  # pods always have somewhere to run. A fixed name would force delete-then-create.
+  node_group_name_prefix = "${local.name_prefix}-workers"
+  node_role_arn          = aws_iam_role.eks_nodes.arn
+  subnet_ids             = aws_subnet.private[*].id
+  instance_types         = ["t3.medium"]
+  capacity_type          = "ON_DEMAND"
+  disk_size              = 50
 
   scaling_config {
     desired_size = 5
@@ -136,4 +151,8 @@ resource "aws_eks_node_group" "main" {
   tags = local.common_tags
 
   depends_on = [aws_iam_role_policy_attachment.eks_nodes]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }

@@ -75,4 +75,19 @@ resource "aws_db_instance" "main" {
   apply_immediately         = !local.is_prod
 
   tags = { Name = "${local.name_prefix}-${each.key}" }
+
+  lifecycle {
+    # Settings AWS does not report back in the same form. After the instance is
+    # re-imported into an empty state (scripts/recover-state.sh) Terraform would
+    # send them to RDS again: re-enabling the managed master password with its
+    # KMS key (RDS rejects changing that key) and "changing" the engine version
+    # from the exact running version (e.g. 16.13) to the major version written
+    # here (16). Minor upgrades stay automatic (auto_minor_version_upgrade); for
+    # a deliberate major upgrade, remove engine_version from this list.
+    ignore_changes = [
+      manage_master_user_password,
+      master_user_secret_kms_key_id,
+      engine_version,
+    ]
+  }
 }

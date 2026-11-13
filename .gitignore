@@ -42,3 +42,6 @@ terraform.rc
 # Optional: ignore plan files saved before destroying Terraform configuration
 # Uncomment the line below if you want to ignore planout files.
 # planout
+# Import blocks generated per run by scripts/recover-state.sh (IDs differ per
+# environment and per rebuild; never commit them)
+infra/imports.auto.tf
