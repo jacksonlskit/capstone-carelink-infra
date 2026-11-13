@@ -10,6 +10,13 @@ permissions:
   id-token: write
   contents: read
 
+# One deployment at a time. A merge that lands while a deploy is running waits
+# for it instead of applying against a half-written state (if several are
+# waiting, GitHub keeps only the newest, which deploys the latest main).
+concurrency:
+  group: terraform-cd
+  cancel-in-progress: false
+
 jobs:
   # ---------------------------------------------------------------------------
   # Pre-deployment Security Gate (Runs at root to read .snyk file)
@@ -78,7 +85,9 @@ jobs:
         run: ../scripts/recover-state.sh staging
 
       - name: Terraform Apply
-        run: terraform apply -input=false -var="environment=staging" -auto-approve -no-color
+        # -lock-timeout: wait up to 15 minutes for another run's state lock
+        # (for example a PR plan) instead of failing straight away.
+        run: terraform apply -input=false -lock-timeout=15m -var="environment=staging" -auto-approve -no-color
 
   # ---------------------------------------------------------------------------
   # Production Deployment (Requires Manual UI Approval)
@@ -125,4 +134,4 @@ jobs:
         run: ../scripts/recover-state.sh production
 
       - name: Terraform Apply
-        run: terraform apply -input=false -var="environment=production" -auto-approve -no-color
+        run: terraform apply -input=false -lock-timeout=15m -var="environment=production" -auto-approve -no-color

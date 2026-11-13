@@ -13,6 +13,11 @@ permissions:
   id-token: write   # Required for GitHub OIDC token generation
   contents: read
 
+# A new push to the same PR or branch cancels its older, now outdated run.
+concurrency:
+  group: terraform-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------------------------------------------------------------------------
   # Linting and Format Checking
@@ -125,7 +130,9 @@ jobs:
         run: ../scripts/recover-state.sh staging
 
       - name: Terraform Plan
-        run: terraform plan -input=false -var="environment=staging" -no-color
+        # -lock-timeout: if a deploy is applying, wait for it to finish (up to
+        # 20 minutes) so the plan is made against the finished state.
+        run: terraform plan -input=false -lock-timeout=20m -var="environment=staging" -no-color
 
   # ---------------------------------------------------------------------------
   # Production Plan
@@ -172,4 +179,4 @@ jobs:
         run: ../scripts/recover-state.sh production
 
       - name: Terraform Plan
-        run: terraform plan -input=false -var="environment=production" -no-color
+        run: terraform plan -input=false -lock-timeout=20m -var="environment=production" -no-color
