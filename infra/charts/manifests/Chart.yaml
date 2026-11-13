@@ -1,0 +1,9 @@
+apiVersion: v2
+name: manifests
+description: >-
+  Applies the Kubernetes objects passed in .Values.resources, unchanged.
+  Used by Terraform (helm_release) for custom resources such as External
+  Secrets objects, whose CRDs only exist after their operator is installed;
+  a kubernetes_manifest resource would need them already at plan time.
+type: application
+version: 0.1.0
