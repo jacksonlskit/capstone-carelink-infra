@@ -168,6 +168,10 @@ lookup() { # prints the import ID for one resource, or nothing if it does not ex
     # ---- EKS ---------------------------------------------------------------------
     aws_eks_cluster)
       aws_q eks describe-cluster --name "$name" --query "cluster.name" ;;
+    aws_launch_template)
+      # Must be adopted, never re-created: a new template ID would make Terraform
+      # replace the node group (and every node) on each recovery.
+      aws_q ec2 describe-launch-templates --launch-template-names "$name" --query 'LaunchTemplates[0].LaunchTemplateId' ;;
     aws_eks_node_group)
       local cluster ng
       cluster=$(field "$r" .after.cluster_name)

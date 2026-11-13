@@ -8,7 +8,7 @@
 | IAM policy attachments and inline policies on our roles | Pipelines cannot reach AWS; load balancer controller and external-dns get `AccessDenied`; new pods cannot pull images | step 1 (GitHub roles) and step 2 (all other roles) |
 | CloudWatch dashboard, RDS event subscription | Dashboard missing, no RDS event emails | step 2 |
 
-Protected since 2026-11-13 by tags in `infra/node-tags.tf`: the EKS cluster security group, the node group's Auto Scaling group and its launch template. Without those tags the cleanup removed the security group's rules (ALB returned 504) and the launch template (node group `DEGRADED`).
+Protected since 2026-11-13 by tags in `infra/node-tags.tf`: the EKS cluster security group, the node group's Auto Scaling group and its launch template. The nodes themselves (instances, disks, network interfaces) are tagged at launch by `aws_launch_template.nodes` in `infra/eks.tf`. Without those tags the cleanup removed the security group's rules (ALB returned 504) and the launch template (node group `DEGRADED`).
 
 The cleanup is paused on 27 and 28 November.
 
