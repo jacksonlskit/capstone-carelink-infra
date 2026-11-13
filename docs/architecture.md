@@ -20,7 +20,7 @@ CareLink runs a telehealth booking and consultation-notes platform for clinics i
 | Runtime | EKS (version set by `eks_cluster_version`, currently 1.37; EKS upgrades must go one minor version at a time), managed node group (ADR 0001) | ECS Fargate | Upstream PetClinic Cloud is Kubernetes-native; pods spread across AZs give no-SPOF; trade-off is control-plane cost and more operations. |
 | Database | RDS MySQL/PostgreSQL, Multi-AZ in production (ADR 0004) | Self-managed DB in pods; Aurora | Managed encryption, backups, PITR, automatic failover. |
 | Network | VPC, 3 public + 3 private subnets, NAT | Public subnets for nodes | Database and nodes stay private. |
-| CI/CD | GitHub Actions + OIDC (ADR 0002) | Jenkins; stored keys | Keyless short-lived credentials; approval gate. |
+| CI/CD | GitHub Actions + OIDC (ADR 0002) for build, scan and promotion; Argo CD in each cluster applies the Helm chart from `env/<environment>` (ADR 0008) | Jenkins; stored keys; `kubectl apply` from CI | Keyless short-lived credentials; production approval gate; Git records every deployment and Argo CD restores the app after a rebuild. |
 | IaC / state | Terraform, S3 native locking (ADR 0003) | CloudFormation; DynamoDB locks | Plan review in PRs; no extra lock table. |
 | Observability | CloudWatch + Container Insights + SNS (ADR 0005) | Prometheus/Grafana, OpenSearch | No servers to run; SLO alarms from code. |
 | Keys / secrets | KMS CMKs, Secrets Manager | AWS-managed keys; env vars | Rotation, audit, nothing in code or images. |
