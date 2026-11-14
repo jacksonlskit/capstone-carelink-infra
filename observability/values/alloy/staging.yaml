@@ -1,0 +1,59 @@
+alloy:
+  configMap:
+    create: true
+    content: |
+      logging {
+        level = "info"
+      }
+
+      discovery.kubernetes "carelink_pods" {
+        role = "pod"
+
+        namespaces {
+          names = ["staging"]
+        }
+      }
+
+      discovery.relabel "carelink_pod_logs" {
+        targets = discovery.kubernetes.carelink_pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "service_name"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+      }
+
+      loki.source.kubernetes "carelink_pod_logs" {
+        targets    = discovery.relabel.carelink_pod_logs.output
+        forward_to = [loki.write.carelink_loki.receiver]
+      }
+
+      loki.write "carelink_loki" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+controller:
+  type: daemonset
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true

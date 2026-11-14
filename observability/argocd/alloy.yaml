@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: carelink-alloy
+  namespace: argocd
+spec:
+  project: observability
+
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 0.12.2
+      helm:
+        valueFiles:
+          - $values/observability/values/alloy/staging.yaml
+
+    - repoURL: https://github.com/jacksonlskit/capstone-carelink-infra.git
+      targetRevision: feature/observability-gitops
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
