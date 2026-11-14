@@ -1,0 +1,9 @@
+loki:
+  storage:
+    bucketNames:
+      chunks: carelink-staging-loki-255945442255-us-east-1
+      ruler: carelink-staging-loki-255945442255-us-east-1
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::255945442255:role/carelink-staging-loki-s3-role

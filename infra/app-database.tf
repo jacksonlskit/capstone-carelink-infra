@@ -66,9 +66,10 @@ resource "aws_iam_role" "external_secrets" {
 
 data "aws_iam_policy_document" "external_secrets" {
   statement {
-    sid       = "ReadAppDatabaseSecretOnly"
-    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = [local.app_db.master_user_secret[0].secret_arn]
+    sid     = "ReadAppDatabaseAndGrafanaSecrets"
+    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [local.app_db.master_user_secret[0].secret_arn,
+    "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.observability.account_id}:secret:${local.name_prefix}-grafana-admin-*"]
   }
 
   statement {
