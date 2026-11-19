@@ -87,7 +87,7 @@ jobs:
       - name: Terraform Apply
         # -lock-timeout: wait up to 15 minutes for another run's state lock
         # (for example a PR plan) instead of failing straight away.
-        run: terraform apply -input=false -lock-timeout=15m -var="environment=staging" -auto-approve -no-color
+        run: terraform apply -input=false -lock-timeout=15m -var="environment=staging" -var="discord_alerts_enabled=true" -auto-approve -no-color
 
   # ---------------------------------------------------------------------------
   # Production Deployment (Requires Manual UI Approval)
