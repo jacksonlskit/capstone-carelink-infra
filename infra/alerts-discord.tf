@@ -26,7 +26,9 @@ locals {
 resource "aws_secretsmanager_secret" "discord_webhook" {
   count = local.discord_on ? 1 : 0
 
-  name                    = "${local.name_prefix}-discord-webhook"
+  # Own name on purpose: "${local.name_prefix}-discord-webhook" is created by hand and read by
+  # the Alertmanager ExternalSecret (observability/secrets/discord-webhook.yaml).
+  name                    = "${local.name_prefix}-discord-bridge-webhook"
   description             = "Discord webhook URL for the alert bridge. Value is set with put-secret-value, not Terraform."
   kms_key_id              = aws_kms_key.this["secrets"].arn
   recovery_window_in_days = local.is_production ? 7 : 0
@@ -47,7 +49,8 @@ resource "aws_cloudwatch_log_group" "discord_notify" {
 
   name              = "/aws/lambda/${local.name_prefix}-discord-notify"
   retention_in_days = local.app_retention
-  kms_key_id        = aws_kms_key.observability.arn
+  # No kms_key_id: the observability key policy only allows CloudWatch Logs for the
+  # Container Insights log groups, so a Lambda log group with this key is refused.
 
   tags = local.common_tags
 }
