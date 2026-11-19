@@ -132,7 +132,7 @@ jobs:
       - name: Terraform Plan
         # -lock-timeout: if a deploy is applying, wait for it to finish (up to
         # 20 minutes) so the plan is made against the finished state.
-        run: terraform plan -input=false -lock-timeout=20m -var="environment=staging" -no-color
+        run: terraform plan -input=false -lock-timeout=20m -var="environment=staging" -var="discord_alerts_enabled=true" -no-color
 
   # ---------------------------------------------------------------------------
   # Production Plan
