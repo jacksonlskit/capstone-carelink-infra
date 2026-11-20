@@ -54,4 +54,4 @@ RDS rotates the master password every 7 days. External Secrets re-reads it every
 
 - The app uses the RDS **master** user. A least-privilege app user with access to `service_instance_db` only is the next step.
 - `sslMode=REQUIRED` encrypts but does not verify the server certificate. Verifying it needs the RDS CA bundle in the app's truststore (`sslMode=VERIFY_IDENTITY`).
-- The database is single-AZ (`rds_multi_az = false`). If the instance fails, the app is down until RDS replaces it (see `db-instance-failure.md`); production should be Multi-AZ.
+- Production MySQL is Multi-AZ: RDS keeps a synchronous standby in another AZ and fails over to it in about 1-2 minutes (see `db-instance-failure.md`). Staging is single-AZ: if its instance fails, the app is down until RDS replaces it.
