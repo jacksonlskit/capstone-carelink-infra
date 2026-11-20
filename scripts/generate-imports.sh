@@ -7,12 +7,17 @@
 # tagged infrastructure survives. With an empty state Terraform would try to
 # create everything again. This script rebuilds the link instead:
 #
-#   1. Terraform is asked what it WOULD create from an empty state
-#      (terraform plan -out + terraform show -json, done by recover-state.sh).
+#   1. Terraform is asked what it WOULD create (terraform plan -out +
+#      terraform show -json, done by recover-state.sh). After the cleanup that
+#      is everything; on other days it is only what the state does not know,
+#      for example resources a failed apply created but could not record.
 #   2. For each of those resources this script looks up the real one in AWS by
 #      its name or tags.
 #   3. If it exists, an `import` block is written; if not, nothing is written
 #      and Terraform creates it as usual.
+#
+# Only pure creates are considered: a resource the plan replaces (delete +
+# create) is already in the state and must not be imported again.
 #
 # The lookups only read from AWS. Nothing is changed until `terraform apply`
 # runs with the generated file, and the plan shows every import first.
@@ -39,12 +44,14 @@ export AWS_DEFAULT_REGION=$REGION
 
 # Every managed resource Terraform plans to create, one JSON object per line.
 jq -c '.resource_changes[]
-       | select(.mode == "managed" and (.change.actions | index("create")))
+       | select(.mode == "managed" and .change.actions == ["create"])
        | {address, type, name, index, after: .change.after}' "$PLAN_JSON" >"$TMP/resources.jsonl"
 
 field() { jq -r "$2 // empty" <<<"$1"; }
 resolved() { awk -F'\t' -v a="$1" '$1 == a {print $2; exit}' "$IDS"; }
 planned_names() { jq -r --arg t "$1" 'select(.type == $t) | .after.name // empty' "$TMP/resources.jsonl"; }
+# Same, for any attribute: planned_values <type> <attribute>
+planned_values() { jq -r --arg t "$1" --arg f "$2" 'select(.type == $t) | .after[$f] // empty' "$TMP/resources.jsonl"; }
 
 # --- the VPC anchors every network lookup --------------------------------------
 VPC_ID=""
@@ -249,6 +256,49 @@ lookup() { # prints the import ID for one resource, or nothing if it does not ex
     aws_sns_topic)
       local arn="arn:aws:sns:${REGION}:${ACCOUNT}:${name}"
       aws sns get-topic-attributes --topic-arn "$arn" >/dev/null 2>&1 && echo "$arn" ;;
+    aws_sns_topic_subscription)
+      # Import ID is the subscription ARN. When the topic or the endpoint (for
+      # example a new Lambda's ARN) is created in the same run, the plan does
+      # not know its ARN yet, so match against the planned topics and functions.
+      local proto topics endpoints t sub
+      proto=$(field "$r" .after.protocol)
+      topics=$(field "$r" .after.topic_arn)
+      [[ -n "$topics" ]] || topics=$(planned_names aws_sns_topic | sed "s#^#arn:aws:sns:${REGION}:${ACCOUNT}:#")
+      endpoints=$(field "$r" .after.endpoint)
+      [[ -n "$endpoints" ]] ||
+        endpoints=$(planned_values aws_lambda_function function_name | sed "s#^#arn:aws:lambda:${REGION}:${ACCOUNT}:function:#")
+      [[ -n "$proto" && -n "$topics" && -n "$endpoints" ]] || return 0
+      for t in $topics; do
+        # A subscription still waiting for confirmation has no ARN yet ("PendingConfirmation").
+        sub=$(aws sns list-subscriptions-by-topic --topic-arn "$t" --output json 2>/dev/null |
+          jq -r --arg p "$proto" --arg e "$endpoints" \
+            '.Subscriptions[]? | select(.Protocol == $p and (.Endpoint as $x | $e | split("\n") | any(. == $x)) and (.SubscriptionArn | startswith("arn:"))) | .SubscriptionArn' |
+          head -n1)
+        if [[ -n "$sub" ]]; then
+          echo "$sub"
+          return
+        fi
+      done ;;
+
+    # ---- Lambda --------------------------------------------------------------------
+    aws_lambda_function)
+      local fn
+      fn=$(field "$r" .after.function_name)
+      [[ -n "$fn" ]] && aws_q lambda get-function --function-name "$fn" --query Configuration.FunctionName ;;
+    aws_lambda_permission)
+      # A statement in the function's resource policy; import ID <function>/<statement id>.
+      # If the function is created in the same run its name may be unknown in the
+      # plan, so also try the planned functions.
+      local sid fn
+      sid=$(field "$r" .after.statement_id)
+      [[ -n "$sid" ]] || return 0
+      for fn in $(field "$r" .after.function_name) $(planned_values aws_lambda_function function_name); do
+        if aws lambda get-policy --function-name "$fn" --query Policy --output text 2>/dev/null |
+          jq -e --arg s "$sid" '.Statement[]? | select(.Sid == $s)' >/dev/null 2>&1; then
+          echo "$fn/$sid"
+          return
+        fi
+      done ;;
 
     # ---- Helm releases in the cluster --------------------------------------------
     helm_release)

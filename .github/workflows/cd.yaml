@@ -53,6 +53,11 @@ jobs:
 
     env:
       TF_IN_AUTOMATION: "true"
+      # Staging-only feature switch. Set for the whole job (not as -var on one
+      # line) so EVERY terraform command sees it, including the plan inside
+      # scripts/recover-state.sh; otherwise the recovery cannot adopt these
+      # resources and the apply fails with "already exists".
+      TF_VAR_discord_alerts_enabled: "true"
 
     steps:
       - name: Checkout Code
@@ -87,7 +92,7 @@ jobs:
       - name: Terraform Apply
         # -lock-timeout: wait up to 15 minutes for another run's state lock
         # (for example a PR plan) instead of failing straight away.
-        run: terraform apply -input=false -lock-timeout=15m -var="environment=staging" -var="discord_alerts_enabled=true" -auto-approve -no-color
+        run: terraform apply -input=false -lock-timeout=15m -var="environment=staging" -auto-approve -no-color
 
   # ---------------------------------------------------------------------------
   # Production Deployment (Requires Manual UI Approval)

@@ -15,22 +15,19 @@ Kubernetes Secret carelink-db (url, username, password)  --secretKeyRef-->  SPRI
 
 After the infra pipeline applies the parameter group, RDS shows it as `pending-reboot`: the setting is active only after one reboot (about 1-2 minutes without database).
 
-**Staging** (`apply_immediately = true`, so only the reboot is left):
+The same steps for both environments (done on 2026-11-13: staging, then production). Even with `apply_immediately = false` in production, RDS attached the new group straight away; only the reboot was left. For production, pick a moment when nobody needs it.
 ```bash
-aws rds describe-db-instances --db-instance-identifier carelink-staging-mysql --query 'DBInstances[0].DBParameterGroups[0].[DBParameterGroupName,ParameterApplyStatus]' --output text
-aws rds reboot-db-instance --db-instance-identifier carelink-staging-mysql
-aws rds wait db-instance-available --db-instance-identifier carelink-staging-mysql
+ENV=staging   # then: ENV=production
+aws rds describe-db-instances --db-instance-identifier carelink-$ENV-mysql --query 'DBInstances[0].[DBInstanceStatus,DBParameterGroups[0].DBParameterGroupName,DBParameterGroups[0].ParameterApplyStatus]' --output text
+aws rds reboot-db-instance --db-instance-identifier carelink-$ENV-mysql --query 'DBInstance.DBInstanceStatus' --output text
+aws rds wait db-instance-available --db-instance-identifier carelink-$ENV-mysql
+aws rds describe-db-instances --db-instance-identifier carelink-$ENV-mysql --query 'DBInstances[0].[DBInstanceStatus,DBParameterGroups[0].DBParameterGroupName,DBParameterGroups[0].ParameterApplyStatus]' --output text
 ```
-Expect `carelink-staging-mysql pending-reboot` before, and `in-sync` after the reboot.
+Expect `available carelink-<env>-mysql pending-reboot` before and `available carelink-<env>-mysql in-sync` after. The app reconnects by itself; no pod restart is needed.
 
-**Production** (`apply_immediately = false`, so the change waits for the Sunday maintenance window unless applied now; do this in an agreed window):
-```bash
-aws rds modify-db-instance --db-instance-identifier carelink-production-mysql --db-parameter-group-name carelink-production-mysql --apply-immediately
-aws rds wait db-instance-available --db-instance-identifier carelink-production-mysql
-aws rds reboot-db-instance --db-instance-identifier carelink-production-mysql
-aws rds wait db-instance-available --db-instance-identifier carelink-production-mysql
-```
-This sets exactly what Terraform already wants, so it creates no drift.
+If the group itself still shows `default.mysql8.0` (a pending modification), apply it first with `aws rds modify-db-instance --db-instance-identifier carelink-$ENV-mysql --db-parameter-group-name carelink-$ENV-mysql --apply-immediately`, wait, then reboot. That sets what Terraform already wants, so it creates no drift.
+
+After a rebuild from scratch the new instance is created with the group already attached, so no reboot is needed.
 
 ## Prove it (demo / evidence)
 
