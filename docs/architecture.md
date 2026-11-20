@@ -11,7 +11,7 @@ CareLink runs a telehealth booking and consultation-notes platform for clinics i
 - **Functional:** multi-service app on an AWS container platform with persistent database-backed operation.
 - **Non-functional:** 99.9% availability in clinic hours (08:00-20:00 SGT, about 21.6 min allowed downtime per 30 days); no single point of failure in the application tier; survive loss of one application instance; RPO <= 24 h; RTO <= 4 h.
 - **Hard constraints:** patient data encrypted at rest and in transit; database not publicly accessible; production data access restricted and logged; automated backups and a demonstrated restore.
-- **Assumptions [owners]:** **region is `us-east-1` by team decision** (matches the code); the PDPA cross-border position is recorded honestly in ADR 0007; staging is a cost-reduced copy (single NAT, single-AZ RDS; note both environments currently run the same node group, 4 desired, min 3, max 6, per `eks.tf`, sized from measured use on 20 Nov) while production is *intended* to be Multi-AZ (not yet true in code, REPO-FINDINGS A1); staging is torn down when idle.
+- **Assumptions [owners]:** **region is `us-east-1` by team decision** (matches the code); the PDPA cross-border position is recorded honestly in ADR 0007; staging is a cost-reduced copy (single NAT, single-AZ RDS; note both environments currently run the same node group, 4 desired, min 3, max 6, per `eks.tf`, sized from measured use on 20 Nov) while production runs one NAT per AZ and Multi-AZ MySQL (A1 closed, `vpc.tf` and `rds.tf`); staging is torn down when idle.
 
 ## 2. Service selection (what / alternative / why)
 
