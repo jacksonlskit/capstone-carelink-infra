@@ -24,6 +24,8 @@ alertmanager:
   enabled: true
   alertmanagerSpec:
     retention: 120h
+    alertmanagerConfigMatcherStrategy:
+      type: None
 
 defaultRules:
   create: true
