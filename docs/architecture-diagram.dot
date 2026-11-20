@@ -55,7 +55,7 @@ digraph carelink {
       }
 
       subgraph cluster_eks {
-        label="Private subnets: EKS v1.37 (eks.tf, incl. access entries), managed node group t3.medium: 5 nodes (min 4, max 10) in both environments"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
+        label="Private subnets: EKS v1.37 (eks.tf, incl. access entries), managed node group t3.medium: 4 nodes (min 3, max 6) in both environments"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
         gw  [label="api-gateway\n>=2 pods on different nodes/AZs", style="rounded,filled,dashed"];
         cus [label="customers-service\n>=2 pods", style="rounded,filled,dashed"];
         vet [label="vets-service\n>=2 pods", style="rounded,filled,dashed"];
