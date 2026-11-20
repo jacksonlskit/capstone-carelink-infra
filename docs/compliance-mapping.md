@@ -46,7 +46,7 @@
 | Requirement | Where | Status |
 |---|---|---|
 | Infrastructure as code, live state matches code | All of `infra/`; `terraform plan` shows no changes | **Met** once applied; run plan before the demo |
-| Per-environment credentials, none stored long-lived | GitHub OIDC roles, environment-scoped `AWS_ROLE_ARN` (`oicd-bootstrap`) | **Partial**: both roles share a trust policy and AdministratorAccess (`REVIEW-NOTES.md` items 1-2) |
+| Per-environment credentials, none stored long-lived | GitHub OIDC roles, environment-scoped `AWS_ROLE_ARN`; each role trusts only its own GitHub environment (exact immutable OIDC subject), production only after approval; deploy branches `env/*` writable only by the pipeline (`oicd-bootstrap`, ADR 0006) | **Met** for separation (staging cannot assume production); **Partial**: both roles still have AdministratorAccess |
 | Security gates that block | Snyk IaC at `--severity-threshold=high` in CI and CD | **Met for IaC**; SCA and container image scanning are in the app repo's pipeline [Jack] |
 | Alerts to a real destination, one fired live | SNS email subscription (`monitoring.tf`) | **Written**; must be merged, confirmed and rehearsed |
 
