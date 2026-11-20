@@ -80,7 +80,7 @@ resource "helm_release" "argocd_apps" {
         source = {
           repoURL        = var.app_repo_url
           targetRevision = "env/${var.environment}"
-          path           = "deploy/charts/carelink"
+          path           = "charts/carelink"
           helm = {
             releaseName = "carelink"
             valueFiles  = ["values.yaml", "values-${var.environment}.yaml"]
