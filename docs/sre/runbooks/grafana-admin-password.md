@@ -8,7 +8,7 @@
 | Kubernetes Secret `grafana-admin` (namespace `monitoring`) | A copy made by External Secrets every 5 minutes (`observability/secrets/grafana-admin.yaml`). |
 | Grafana's own database (on its persistent disk) | Grafana saves the admin password there **the first time it starts** and ignores later changes to the secret. |
 
-Because of that last row, a new value in Secrets Manager needs a **one-time reset** inside Grafana. Until then the new password is refused, and the dashboard and data-source sidecars (which log in with the same secret) get `401`.
+Because of that last row, a new value in Secrets Manager needs a **one-time reset** inside Grafana. Until then the new password is refused, and the dashboard and data-source sidecars (which log in with the same secret) get `401`. Their failed logins also lock the `admin` user for about 5 minutes (see step 5).
 
 ## When to run it
 
@@ -50,6 +50,12 @@ aws eks update-kubeconfig --name carelink-staging-eks --region us-east-1
    ```bash
    kubectl -n monitoring exec deploy/kube-prometheus-stack-grafana -c grafana -- sh -c 'auth=$(printf "%s:%s" "$GF_SECURITY_ADMIN_USER" "$GF_SECURITY_ADMIN_PASSWORD" | base64 | tr -d "\n"); if wget -q -O /dev/null --header "Authorization: Basic $auth" http://localhost:3000/api/user; then echo "LOGIN OK"; else echo "LOGIN FAILED"; fi'
    ```
+
+   **`LOGIN FAILED` right after step 4?** Check why before changing anything. This counts Grafana's "blocked" messages from the last 10 minutes:
+   ```bash
+   kubectl -n monitoring logs deploy/kube-prometheus-stack-grafana -c grafana --since=10m | grep -c "temporarily blocked"
+   ```
+   A number above `0` means Grafana's brute-force protection has locked the `admin` user. Between steps 3 and 4 the sidecars tried the new password 5 times while the database still held the old one, and 5 failed logins within 5 minutes lock the user. The lock lifts 5 minutes after the 5th failure, and until then even the correct password gets `401`. Wait 5 minutes and run step 5 again. Don't reset the password again (it changes nothing) and don't turn the protection off. Seen on staging on 15 Nov 2026: failures at 08:46:27, `LOGIN OK` at 08:51:42.
 
 To sign in from a laptop: `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`, open http://localhost:3000, user `admin`. Read the password only when needed, and don't paste it anywhere:
 
