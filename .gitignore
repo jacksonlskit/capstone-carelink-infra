@@ -45,3 +45,6 @@ terraform.rc
 # Import blocks generated per run by scripts/recover-state.sh (IDs differ per
 # environment and per rebuild; never commit them)
 infra/imports.auto.tf
+
+# Lambda zip built by the archive provider during plan/apply (alerts-discord.tf)
+infra/.build/

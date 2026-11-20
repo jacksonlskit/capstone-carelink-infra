@@ -62,6 +62,8 @@ The cleanup is paused on 27 and 28 November.
 | Cluster security group has 0 rules | It lost its `Project` tag, or the tag was added after the cleanup ran | Re-add the two EKS default rules (all traffic from the group itself; all outbound), then re-run the pipeline so the tag is back |
 | Node group `DEGRADED`, `Ec2LaunchTemplateNotFound` | Launch template was deleted | A node group cannot get a new launch template: replace it. `terraform apply -replace=aws_eks_node_group.main` (new nodes are created before the old ones are drained) |
 | `recover-state.sh` reports "no lookup defined for <type>" | A new resource type was added to Terraform | Add a `case` for it in `scripts/generate-imports.sh` |
+| Apply fails with `already exists` on a normal day (state not empty) | An earlier apply failed halfway: it created the resource in AWS but stopped before recording it | Nothing to do by hand: on every run `recover-state.sh` also checks what the plan would create, and adopts what already exists ("Wrote N import blocks" in the log). If it does not, the type has no lookup yet (row above) |
+| A feature that is switched on in only one environment is re-created every morning and fails with `already exists` | The switch was passed as `-var` on the apply line only, so the recovery's own plan never saw those resources | Set the switch as a job-level `TF_VAR_<name>` in **both** `ci.yaml` and `cd.yaml` (see `TF_VAR_discord_alerts_enabled` in the staging jobs); every `terraform` command in the job then reads it |
 
 ## Why not just protect the state?
 

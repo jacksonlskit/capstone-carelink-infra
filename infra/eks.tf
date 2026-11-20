@@ -143,10 +143,20 @@ resource "aws_eks_node_group" "main" {
     version = aws_launch_template.nodes.latest_version
   }
 
+  # Sized from measurements on 20 Nov 2026 (kubelet stats, both clusters):
+  # CPU is 3-11% used, so memory and pod slots decide the node count. A
+  # t3.medium offers 3294 MiB and at most 17 pods (VPC CNI limit).
+  # - production needs 3 nodes; 4 keeps N+1: after losing a node (or the
+  #   "lose an instance" drill) 3 nodes still fit everything plus a deploy's
+  #   surge pods (about 50% memory).
+  # - staging needs 4: at 3 nodes its monitoring stack fills every pod slot.
+  # There is no cluster autoscaler, so the group never grows by itself:
+  # max_size only leaves room for a manual scale-up (EKS raises the limits
+  # itself during node upgrades).
   scaling_config {
-    desired_size = 5
-    min_size     = 4
-    max_size     = 10
+    desired_size = 4
+    min_size     = 3
+    max_size     = 6
   }
 
   update_config {

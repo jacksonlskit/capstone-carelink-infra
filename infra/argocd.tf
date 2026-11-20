@@ -49,6 +49,13 @@ resource "helm_release" "argocd" {
     server = {
       service = { type = "ClusterIP" }
     }
+    # The application controller requested no memory, so the scheduler could not
+    # see it (about 445 MiB in use in staging, 155 MiB in production on 20 Nov).
+    # A request makes the node sizing in eks.tf hold. No limit on purpose: an
+    # out-of-memory kill would stop every sync.
+    controller = {
+      resources = { requests = { memory = "512Mi" } }
+    }
   })]
 
   depends_on = [aws_eks_node_group.main]

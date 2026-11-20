@@ -86,6 +86,11 @@ jobs:
 
     env:
       TF_IN_AUTOMATION: "true"
+      # Staging-only feature switch. Set for the whole job (not as -var on one
+      # line) so EVERY terraform command sees it, including the plan inside
+      # scripts/recover-state.sh; otherwise the recovery cannot adopt these
+      # resources and the apply fails with "already exists".
+      TF_VAR_discord_alerts_enabled: "true"
 
     steps:
       - name: Checkout Code
