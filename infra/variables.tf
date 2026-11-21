@@ -130,15 +130,40 @@ locals {
   )
 }
 
-variable "admin_iam_arns" {
-  description = "List of IAM user or role ARNs granted cluster administrator access in EKS"
-  type        = list(string)
-  default = [
-    "arn:aws:iam::255945442255:user/students/ce13/jacksonlskit"
-    , "arn:aws:iam::255945442255:user/students/ce13/shil5ram"
-    , "arn:aws:iam::255945442255:user/students/ce13/plainjon"
-    , "arn:aws:iam::255945442255:user/students/ce13/Krishnaveni-CE13"
-  ]
+variable "cluster_access" {
+  description = <<-EOT
+    Who may use kubectl on each environment's cluster, by IAM user name (the
+    cohort's users live under the path user/students/ce13/; the ARNs are built in
+    eks.tf from the current account). admins get AmazonEKSClusterAdminPolicy,
+    viewers get AmazonEKSViewPolicy (read most objects, never Secrets).
+    Production admin is deliberately limited to the DevOps owner, so production
+    access only changes through a reviewed pull request. The pipeline roles get
+    admin separately, as the cluster creator (eks.tf, access_config).
+  EOT
+  type = map(object({
+    admins  = list(string)
+    viewers = list(string)
+  }))
+  default = {
+    staging = {
+      admins  = ["jacksonlskit", "shil5ram", "plainjon", "Krishnaveni-CE13"]
+      viewers = []
+    }
+    production = {
+      admins  = ["jacksonlskit"]
+      viewers = ["shil5ram", "plainjon", "Krishnaveni-CE13"]
+    }
+  }
+
+  validation {
+    condition     = alltrue([for env in ["staging", "production"] : contains(keys(var.cluster_access), env)])
+    error_message = "cluster_access needs an entry for both staging and production."
+  }
+
+  validation {
+    condition     = alltrue([for env, access in var.cluster_access : length(setintersection(access.admins, access.viewers)) == 0])
+    error_message = "A user cannot be both an admin and a viewer in the same environment."
+  }
 }
 
 variable "dns_zone_name" {

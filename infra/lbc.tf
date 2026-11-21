@@ -42,14 +42,33 @@ resource "aws_iam_role" "lbc" {
   tags = local.common_tags
 }
 
+# The controller's permissions, owned by this code. The role used to attach a
+# shared, account-level policy (AWSLoadBalancerControllerIAMPolicy) created
+# outside this repo, so anyone editing or deleting it would have broken our
+# load balancers. policies/aws-lbc-iam-policy.json is the same document, now
+# reviewed here and tagged, so the nightly cleanup spares it.
+resource "aws_iam_policy" "lbc" {
+  name        = "${local.name_prefix}-aws-lbc-policy"
+  description = "AWS Load Balancer Controller permissions for ${local.name_prefix}"
+  policy      = file("${path.module}/policies/aws-lbc-iam-policy.json")
+
+  tags = local.common_tags
+}
+
 resource "aws_iam_role_policy_attachment" "lbc" {
   role       = aws_iam_role.lbc.name
-  policy_arn = "arn:aws:iam::255945442255:policy/AWSLoadBalancerControllerIAMPolicy"
+  policy_arn = aws_iam_policy.lbc.arn
+
+  # Attach the new policy before the old attachment is removed, so the
+  # controller never runs without permissions during the switch.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # 4. Install the controller. It watches Ingress objects and creates the ALB for
-#    them (the app repo's k8s/overlays/<env>/ingress.yaml). The service account
-#    uses the IRSA role above.
+#    them (the app repo's charts/carelink/templates/ingress.yaml). The service
+#    account uses the IRSA role above.
 resource "helm_release" "lbc" {
   name       = "aws-load-balancer-controller"
   namespace  = "kube-system"

@@ -66,16 +66,32 @@ resource "aws_eks_cluster" "main" {
 # ==============================================================================
 # EKS Access Entries (Kubernetes RBAC Access for Team IAM Principals)
 # ==============================================================================
+# Per environment (var.cluster_access): in production only the DevOps owner is
+# cluster admin; the rest of the team can look (pods, logs, events) but cannot
+# change anything or read Secrets. Changes reach production through Git and
+# Argo CD, not kubectl.
+locals {
+  team_user_arn_prefix = "arn:aws:iam::${local.account_id}:user/students/ce13/"
+  cluster_admin_arns   = [for user in var.cluster_access[var.environment].admins : "${local.team_user_arn_prefix}${user}"]
+  cluster_viewer_arns  = [for user in var.cluster_access[var.environment].viewers : "${local.team_user_arn_prefix}${user}"]
+}
 
-resource "aws_eks_access_entry" "team_admins" {
-  for_each      = toset(var.admin_iam_arns)
+resource "aws_eks_access_entry" "team" {
+  for_each      = toset(concat(local.cluster_admin_arns, local.cluster_viewer_arns))
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
   type          = "STANDARD"
 }
 
+# The entries used to be called team_admins; same objects, so Terraform keeps
+# them instead of deleting and recreating everyone's access.
+moved {
+  from = aws_eks_access_entry.team_admins
+  to   = aws_eks_access_entry.team
+}
+
 resource "aws_eks_access_policy_association" "team_admins" {
-  for_each      = toset(var.admin_iam_arns)
+  for_each      = toset(local.cluster_admin_arns)
   cluster_name  = aws_eks_cluster.main.name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   principal_arn = each.value
@@ -84,7 +100,20 @@ resource "aws_eks_access_policy_association" "team_admins" {
     type = "cluster"
   }
 
-  depends_on = [aws_eks_access_entry.team_admins]
+  depends_on = [aws_eks_access_entry.team]
+}
+
+resource "aws_eks_access_policy_association" "team_viewers" {
+  for_each      = toset(local.cluster_viewer_arns)
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy"
+  principal_arn = each.value
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.team]
 }
 
 # ==============================================================================
