@@ -1,5 +1,0 @@
-bucket       = "carelink-infra-state-us-east-1-255945442255"
-key          = "staging/terraform.tfstate"
-region       = "us-east-1"
-encrypt      = true
-use_lockfile = true
