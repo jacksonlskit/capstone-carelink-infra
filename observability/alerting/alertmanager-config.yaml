@@ -1,4 +1,3 @@
-
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: AlertmanagerConfig
 metadata:
@@ -18,15 +17,23 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     matchers:
-      - name: environment
-        value: staging
-        matchType: "="
       # Only alerts someone should act on: drops the always-firing Watchdog
       # heartbeat, InfoInhibitor and info-level noise (severity none or info),
       # keeps page, ticket, critical and warning.
       - name: severity
         value: info|none
         matchType: "!~"
+    routes:
+      - matchers:
+          - name: environment
+            value: staging
+            matchType: "="
+        receiver: discord
+      - matchers:
+          - name: environment
+            value: production
+            matchType: "="
+        receiver: discord
 
   receivers:
     - name: discord
