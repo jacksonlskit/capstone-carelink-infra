@@ -29,8 +29,41 @@ variable "app_repo_url" {
   default     = "https://github.com/jacksonlskit/capstone-carelink-app.git"
 }
 
+variable "observability_repo_url" {
+  description = "Public Git repository (this one) whose observability/ folder holds the staging monitoring stack that Argo CD deploys"
+  type        = string
+  default     = "https://github.com/jacksonlskit/capstone-carelink-infra.git"
+}
+
 locals {
   argocd_app_name = "carelink-${var.environment}"
+
+  # The staging monitoring stack (Prometheus, Grafana, Loki, Alloy, alerting) is
+  # an "app of apps": this root Application deploys observability/argocd, which
+  # holds one Application per component. Staging only; production has none.
+  # It used to be applied by hand with kubectl, so a rebuilt cluster would not
+  # have got its monitoring back; now it comes back with the rest.
+  observability_root_app = {
+    for name, app in {
+      "carelink-observability" = {
+        namespace = "argocd"
+        project   = "default"
+        source = {
+          repoURL        = var.observability_repo_url
+          targetRevision = "main"
+          path           = "observability/argocd"
+          directory      = { recurse = true }
+        }
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "argocd"
+        }
+        syncPolicy = {
+          automated = { prune = true, selfHeal = true }
+        }
+      }
+    } : name => app if var.environment == "staging"
+  }
 }
 
 resource "helm_release" "argocd" {
@@ -73,7 +106,7 @@ resource "helm_release" "argocd_apps" {
   version    = "2.0.8"
 
   values = [yamlencode({
-    applications = {
+    applications = merge({
       (local.argocd_app_name) = {
         namespace = "argocd"
         project   = "default"
@@ -103,7 +136,7 @@ resource "helm_release" "argocd_apps" {
           }
         }
       }
-    }
+    }, local.observability_root_app)
   })]
 
   depends_on = [

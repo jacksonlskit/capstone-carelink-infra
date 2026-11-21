@@ -33,7 +33,7 @@ singleBinary:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: gp2
+    storageClass: gp3-encrypted # encrypted with our "ebs" KMS key (infra/ebs-csi.tf)
 
 read:
   replicas: 0

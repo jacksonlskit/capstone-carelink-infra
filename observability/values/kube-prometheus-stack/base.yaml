@@ -4,7 +4,7 @@ grafana:
     enabled: true
     type: pvc
     size: 10Gi
-    storageClassName: gp2
+    storageClassName: gp3-encrypted # encrypted with our "ebs" KMS key (infra/ebs-csi.tf)
 
 prometheus:
   enabled: true
@@ -13,7 +13,7 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: gp2
+          storageClassName: gp3-encrypted
           accessModes:
             - ReadWriteOnce
           resources:
