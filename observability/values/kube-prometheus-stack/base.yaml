@@ -29,3 +29,15 @@ alertmanager:
 
 defaultRules:
   create: true
+
+# EKS runs the control plane (API server, scheduler, controller-manager, etcd)
+# for us, in AWS's account. The chart's checks for the scheduler and the
+# controller-manager expect them on our own nodes, so their targets never exist
+# and KubeSchedulerDown / KubeControllerManagerDown would fire forever.
+# This turns off only those checks, not the components themselves. EKS does
+# expose their metrics through the API server (metrics.eks.amazonaws.com) if
+# we ever want to scrape them properly.
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false

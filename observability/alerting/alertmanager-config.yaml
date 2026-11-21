@@ -21,6 +21,12 @@ spec:
       - name: environment
         value: staging
         matchType: "="
+      # Only alerts someone should act on: drops the always-firing Watchdog
+      # heartbeat, InfoInhibitor and info-level noise (severity none or info),
+      # keeps page, ticket, critical and warning.
+      - name: severity
+        value: info|none
+        matchType: "!~"
 
   receivers:
     - name: discord
