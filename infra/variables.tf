@@ -39,12 +39,6 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "single_nat_gateway" {
-  description = "true = one shared NAT (staging); false = one NAT per AZ (production)"
-  type        = bool
-  default     = true
-}
-
 # ---------- EKS ----------
 variable "eks_cluster_version" {
   description = "EKS Kubernetes version (must be a valid AWS EKS release, e.g., 1.30 or 1.31)"
@@ -77,12 +71,6 @@ variable "db_instance_class" {
   default     = "db.t4g.small"
 }
 
-variable "rds_multi_az" {
-  description = "Enable Multi-AZ for RDS"
-  type        = bool
-  default     = false
-}
-
 variable "db_backup_retention_days" {
   description = "Automated backup retention in days"
   type        = number
@@ -97,6 +85,9 @@ variable "databases" {
     db_name           = string
     allocated_storage = number
     max_storage       = number
+    # Multi-AZ (a synchronous standby in another AZ) in production only; staging
+    # stays single-AZ to save cost. See multi_az in rds.tf.
+    multi_az_in_production = optional(bool, false)
   }))
   default = {
     mysql = {
@@ -105,6 +96,8 @@ variable "databases" {
       db_name           = "carelink"
       allocated_storage = 20
       max_storage       = 100
+      # The app's database: no single point of failure in production.
+      multi_az_in_production = true
     }
     postgres = {
       engine            = "postgres"

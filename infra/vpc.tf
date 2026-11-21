@@ -3,9 +3,20 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  azs        = slice(data.aws_availability_zones.available.names, 0, 3)
-  nat_count  = var.single_nat_gateway ? 1 : 3
-  cluster_id = "${local.name_prefix}-eks"
+  azs = slice(data.aws_availability_zones.available.names, 0, 3)
+  # Outbound traffic from the private subnets (image pulls, the AWS APIs used
+  # by the load balancer controller, External Secrets and external-dns, GitHub
+  # for Argo CD) leaves through NAT gateways.
+  # - production: one NAT per AZ, and each private subnet uses the one in its
+  #   own AZ, so losing an AZ does not cut the other two off (no single point
+  #   of failure, Use Case B).
+  # - staging: one shared NAT to save cost (about $73/month for the other two);
+  #   staging has no no-single-point-of-failure requirement.
+  # Decided from the environment, not a variable, so every plan (including the
+  # recovery's own plan in scripts/recover-state.sh) sees the same value.
+  single_nat_gateway = var.environment != "production"
+  nat_count          = local.single_nat_gateway ? 1 : 3
+  cluster_id         = "${local.name_prefix}-eks"
 
   public_subnet_cidrs  = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i)]
   private_subnet_cidrs = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i + 10)]
@@ -103,7 +114,7 @@ resource "aws_route_table" "private" {
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
+    nat_gateway_id = aws_nat_gateway.main[local.single_nat_gateway ? 0 : count.index].id
   }
 
   tags = { Name = "${local.name_prefix}-private-rt-${local.azs[count.index]}" }

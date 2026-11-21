@@ -57,7 +57,12 @@ resource "aws_db_instance" "main" {
   storage_encrypted     = true
   kms_key_id            = aws_kms_key.this["rds"].arn
 
-  multi_az             = var.rds_multi_az
+  # Production MySQL (the app's database) keeps a synchronous standby in another
+  # AZ; RDS fails over to it in about 1-2 minutes if the primary or its AZ fails.
+  # Staging, and the unused Postgres, stay single-AZ. In production the change
+  # waits for the maintenance window (apply_immediately below); converting is
+  # online, with no downtime.
+  multi_az             = local.is_prod && each.value.multi_az_in_production
   db_subnet_group_name = aws_db_subnet_group.main.name
   # MySQL refuses connections without TLS (parameter group below). Other
   # engines keep the AWS default group (null = leave it unchanged).
