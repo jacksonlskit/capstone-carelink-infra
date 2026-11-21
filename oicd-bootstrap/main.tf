@@ -413,40 +413,15 @@ resource "github_repository_ruleset" "app_main_protection" {
   }
 }
 
-# The env/<environment> branches are the deployment records Argo CD deploys
-# from: whatever lands there goes live. Only the app pipeline (cd.yaml, after a
-# reviewed merge to main and, for production, the approval) may write to them.
-# Nobody else can create, update, delete or force-push them, so a direct push
-# can no longer skip the review.
-# Break-glass: set enforcement = "disabled" here and apply, then revert.
-resource "github_repository_ruleset" "app_env_branches" {
-  name        = "app-env-branches"
-  repository  = local.repo_app
-  target      = "branch"
-  enforcement = "active"
-
-  conditions {
-    ref_name {
-      include = ["refs/heads/env/*"]
-      exclude = []
-    }
-  }
-
-  # GitHub Actions (the app id behind the workflows' GITHUB_TOKEN), so the
-  # pipeline's promote step can still push the deployment commits.
-  bypass_actors {
-    actor_id    = 15368
-    actor_type  = "Integration"
-    bypass_mode = "always"
-  }
-
-  rules {
-    creation         = true
-    update           = true
-    deletion         = true
-    non_fast_forward = true
-  }
-}
+# No ruleset protects the env/<environment> branches (the deployment records
+# Argo CD deploys from). It would have to let the app pipeline through: its
+# promote step pushes with GITHUB_TOKEN, as the GitHub Actions app. GitHub only
+# accepts an app as a ruleset bypass actor when it belongs to the organization
+# that owns the repository, and these repositories belong to a personal
+# account: the apply on 21 Nov 2026 failed with "422 Actor GitHub Actions
+# integration must be part of the ruleset source or owner organization".
+# In an organization the ruleset works as designed. ADR 0006 records the gap
+# and what protects env/* until then.
 
 resource "github_repository_ruleset" "infra_main_protection" {
   name        = "infra-main-protection"
