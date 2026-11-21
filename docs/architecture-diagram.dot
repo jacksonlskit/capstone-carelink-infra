@@ -46,7 +46,7 @@ digraph carelink {
     kms [label="KMS CMKs (kms.tf)\nEBS, RDS, Secrets; rotation on", style="rounded,filled,dashed"];
 
     subgraph cluster_vpc {
-      label="VPC (vpc.tf), region us-east-1 (team decision): 3 public + 3 private subnets over 3 AZs\n(staging: single NAT; production intended NAT per AZ, see REPO-FINDINGS A1)"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#4ade80"; fontsize=11;
+      label="VPC (vpc.tf), region us-east-1 (team decision): 3 public + 3 private subnets over 3 AZs\n(staging: single NAT; production: one NAT per AZ)"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#4ade80"; fontsize=11;
 
       subgraph cluster_pub {
         label="Public subnets"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
@@ -66,8 +66,8 @@ digraph carelink {
 
       subgraph cluster_data {
         label="Private DB subnets (rds.tf): no public access"; style="rounded,filled,dashed"; fillcolor="#dcfce7"; color="#86efac";
-        rds1 [label="RDS MySQL + RDS PostgreSQL (db.t4g.small each)\nencrypted at rest (CMK); TLS and audit logging NOT yet enforced\nproduction Multi-AZ intended (A1); staging single-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
-        rds2 [label="RDS standby (production, once A1 is fixed)\nsynchronous Multi-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
+        rds1 [label="RDS MySQL + RDS PostgreSQL (db.t4g.small each)\nencrypted at rest (CMK); TLS and audit logging NOT yet enforced\nproduction MySQL Multi-AZ; staging single-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
+        rds2 [label="RDS standby (production MySQL)\nsynchronous Multi-AZ", style="rounded,filled,dashed", fillcolor="#e0e7ff"];
         rds1 -> rds2 [label="sync replication", dir=both];
       }
     }

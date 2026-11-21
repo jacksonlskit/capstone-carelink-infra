@@ -60,10 +60,41 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # -----------------------------------------------------------------------------
-# OIDC TRUST POLICY (ACCOMMODATES NUMERICAL GITHUB IDS)
+# OIDC TRUST POLICY: ONE ROLE PER GITHUB ENVIRONMENT
 # -----------------------------------------------------------------------------
+# Both repositories use GitHub's immutable OIDC subject, which names the owner
+# and repository by their numeric IDs (a renamed or re-created repository gets
+# a new ID and cannot take over the role):
+#   repo:<owner>@<owner id>/<repo>@<repo id>:environment:<environment>
+#
+# Each role trusts only jobs that run in ITS GitHub environment of these two
+# repositories, matched exactly (no wildcards):
+#   - staging role:    jobs with `environment: staging`
+#   - production role: jobs with `environment: production`, which wait for the
+#     required reviewer's approval before they start
+# So staging can never act as production, a job without an environment (e.g.
+# a feature-branch push) gets no AWS access, and no other repository can use
+# either role. Every job that needs AWS runs in an environment (ci.yaml,
+# cd.yaml, sre-health-check.yaml in infra; cd.yaml in app).
+
+data "github_repository" "infra" {
+  full_name = "${local.github_owner}/${local.repo_infra}"
+}
+
+data "github_repository" "app" {
+  full_name = "${local.github_owner}/${local.repo_app}"
+}
+
+locals {
+  oidc_subject_prefixes = [
+    "repo:${local.github_owner}@${data.github_user.current.id}/${local.repo_infra}@${data.github_repository.infra.repo_id}",
+    "repo:${local.github_owner}@${data.github_user.current.id}/${local.repo_app}@${data.github_repository.app.repo_id}",
+  ]
+}
 
 data "aws_iam_policy_document" "github_oidc_trust" {
+  for_each = toset(["staging", "production"])
+
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -79,15 +110,10 @@ data "aws_iam_policy_document" "github_oidc_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Matches repo:jacksonlskit@<id>/<repo>@<id>:<event>
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${local.github_owner}*${local.repo_infra}*",
-        "repo:${local.github_owner}*${local.repo_app}*",
-        "repo:${local.github_owner}*"
-      ]
+      values   = [for prefix in local.oidc_subject_prefixes : "${prefix}:environment:${each.key}"]
     }
   }
 }
@@ -238,7 +264,7 @@ resource "aws_s3_bucket_policy" "tf_state" {
 # Staging IAM Role
 resource "aws_iam_role" "staging" {
   name               = "carelink-github-staging-role"
-  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust.json
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust["staging"].json
 }
 
 resource "aws_iam_role_policy_attachment" "staging_admin" {
@@ -249,7 +275,7 @@ resource "aws_iam_role_policy_attachment" "staging_admin" {
 # Production IAM Role
 resource "aws_iam_role" "production" {
   name               = "carelink-github-production-role"
-  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust.json
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_trust["production"].json
 }
 
 resource "aws_iam_role_policy_attachment" "production_admin" {
@@ -373,7 +399,9 @@ resource "github_repository_ruleset" "app_main_protection" {
     pull_request {
       required_approving_review_count = 1
       dismiss_stale_reviews_on_push   = true
-      require_last_push_approval      = false
+      # Someone other than the last pusher must approve, so new code pushed
+      # after an approval cannot be merged unreviewed (same as the infra repo).
+      require_last_push_approval = true
     }
 
     required_status_checks {
@@ -384,6 +412,16 @@ resource "github_repository_ruleset" "app_main_protection" {
     }
   }
 }
+
+# No ruleset protects the env/<environment> branches (the deployment records
+# Argo CD deploys from). It would have to let the app pipeline through: its
+# promote step pushes with GITHUB_TOKEN, as the GitHub Actions app. GitHub only
+# accepts an app as a ruleset bypass actor when it belongs to the organization
+# that owns the repository, and these repositories belong to a personal
+# account: the apply on 21 Nov 2026 failed with "422 Actor GitHub Actions
+# integration must be part of the ruleset source or owner organization".
+# In an organization the ruleset works as designed. ADR 0006 records the gap
+# and what protects env/* until then.
 
 resource "github_repository_ruleset" "infra_main_protection" {
   name        = "infra-main-protection"

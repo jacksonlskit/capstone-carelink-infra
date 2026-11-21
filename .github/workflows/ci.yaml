@@ -63,7 +63,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Snyk IaC Test
-        uses: snyk/actions/iac@master
+        uses: snyk/actions/iac@11b673cfb4b0dc0d860a1323caa199d54950dcce # master on 7 Oct 2026; pinned so a change upstream cannot alter the gate
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
