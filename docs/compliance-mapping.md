@@ -2,7 +2,7 @@
 
 *Draft 25 Oct 2026 by Jon (SRE). Written against infra repo commit 8d95781 (files in `infra/`) plus the SRE files in this pack. **Status is honest, not aspirational**: the brief says "it works" is not a defence against "it violates the constraint", and every row must end up demonstrable live. Update the Status column as gaps close; delete this banner before submission.*
 
-**Status legend:** **Met in code** = the Terraform does it (still prove it live). **Partial** = some of it. **Gap** = not in the code yet (owner in brackets). **Not built** = depends on something not yet written. Gap references (A1, C2...) point to `REPO-FINDINGS.md`.
+**Status legend:** **Met in code** = the Terraform does it (still prove it live). **Partial** = some of it. **Gap** = not in the code yet (owner in brackets). **Not built** = depends on something not yet written. Labels such as A1 or C2 are the IDs from the team's 25 Oct code review.
 
 ## Constraint 1: Availability 99.9% in clinic hours (08:00-20:00 SGT), no single point of failure, survive loss of one application instance
 
@@ -14,7 +14,7 @@
 | 2+ replicas per service on different nodes | App deployment settings (replicas, pod anti-affinity or topology spread, PodDisruptionBudget): **not in the infra repo** | **Gap** [Jack] | `kubectl get pods -o wide` showing pods on different nodes/AZs |
 | Database tier survives an instance/AZ loss | RDS `multi_az = local.is_prod && each.value.multi_az_in_production` (`rds.tf`); `true` for the app's MySQL (`variables.tf`), so production MySQL keeps a synchronous standby in another AZ; staging and the unused Postgres stay single-AZ (cost) | **Met in code** (A1 closed); production converts in the maintenance window after the deploy, then rehearse a forced failover | `aws rds describe-db-instances --query 'DBInstances[].[DBInstanceIdentifier,MultiAZ]'` must show `true` in production |
 | NAT tier survives an AZ loss | `local.single_nat_gateway = var.environment != "production"` (`vpc.tf`): production has one NAT per AZ and each private subnet routes through the NAT in its own AZ; staging shares one (cost) | **Met in code** (A1 closed) | Three NAT gateways in three AZs |
-| Public entry point | ALB from the app repo's Ingress (`k8s/overlays/staging/ingress.yaml`) via the AWS Load Balancer Controller (`helm_release.lbc` in `lbc.tf`); hostname `carelink-<env>.sctp-sandbox.com` kept pointed at the day's ALB by external-dns (`dns.tf`) | **Met in staging**; production has the controller but no Ingress yet [Jack] | `kubectl -n staging get ingress`; ALB across 3 AZs; https://carelink-staging.sctp-sandbox.com |
+| Public entry point | ALB from the app repo's Ingress (`charts/carelink/templates/ingress.yaml`) via the AWS Load Balancer Controller (`helm_release.lbc` in `lbc.tf`); hostname `carelink-<env>.sctp-sandbox.com` kept pointed at the day's ALB by external-dns (`dns.tf`) | **Met in staging**; production has the controller but no Ingress yet [Jack] | `kubectl -n staging get ingress`; ALB across 3 AZs; https://carelink-staging.sctp-sandbox.com |
 | **Demonstrate loss of one instance** | Scale a service to 1 replica or `kubectl drain` one node in production; alarm `<service>-redundancy-lost` emails (`monitoring.tf`) | **Not demonstrable yet** (needs app, nodes >= 2, add-on for pod metrics: C3) | Site keeps responding during the drill, email arrives, dashboard tile red then green |
 
 ## Constraint 2: Data protection (encrypted at rest and in transit, database not public, production access restricted and logged)

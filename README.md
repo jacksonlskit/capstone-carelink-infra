@@ -69,21 +69,11 @@ capstone-carelink-infra/
 │       ├── cd.yml                     # Delivery: Apply Staging, Reviewer Approval Gate, Apply Prod
 │       └── sre.yml                    # Observability: Scheduled CloudWatch alarms & log audits
 │
-├── adrs/                              # Phase 1: Architecture Decision Records (Minimum 4)
-│   ├── 0001-container-runtime-eks.md  # ADR: Selection of Amazon EKS over Amazon ECS
-│   ├── 0002-keyless-oidc-security.md  # ADR: GitHub Actions OIDC vs long-lived IAM keys
-│   ├── 0003-native-s3-state-locks.md  # ADR: Terraform 1.10+ native S3 locks vs DynamoDB
-│   └── 0004-database-availability.md  # ADR: Multi-AZ RDS & automated backup retention
-│
 ├── docs/                              # Capstone Deliverables & Operational Documentation
+│   ├── adr/                           # Architecture Decision Records (0005-0008)
 │   ├── architecture-diagram.png       # Live end-to-end architecture diagram
 │   ├── compliance-mapping.md          # Hard constraint compliance mapping matrix
-│   ├── monthly-cost-estimate.md       # Running monthly cost estimate for AWS resources
 │   └── sre/runbooks/db-instance-failure.md            # SRE runbook for failover & incident response
-│
-├── environments/                      # Environment-specific variable overrides
-│   ├── staging.tfvars                 # Staging configuration (single NAT, db.t4g.small)
-│   └── production.tfvars              # Production configuration (Multi-AZ, high availability)
 │
 ├── backend.tf                         # Empty S3 backend declaration (injected via CI/CD)
 ├── providers.tf                       # AWS, Kubernetes, and Helm provider constraints
@@ -93,7 +83,6 @@ capstone-carelink-infra/
 ├── vpc.tf                             # Multi-AZ VPC: 3 Public & 3 Private Subnets + NAT Gateways
 ├── kms.tf                             # Customer Managed Keys (CMK) for EBS, RDS, and Secrets
 ├── eks.tf                             # EKS Cluster (v1.30), OIDC IRSA provider, Managed Node Groups
-├── eks-access.tf                      # EKS Access Entries & Policies for GitHub Actions OIDC roles
 ├── ecr.tf                             # Amazon ECR repositories for all 4 microservices
 ├── rds.tf                             # Multi-AZ RDS MySQL/PostgreSQL in private subnets (KMS encrypted)
 ├── monitoring.tf                      # CloudWatch Alarms, SNS alert topics, and SRE Dashboard

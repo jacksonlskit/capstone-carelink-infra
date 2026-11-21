@@ -1,6 +1,6 @@
 # CareLink Health: Architecture (DRAFT v0.2, EKS)
 
-> Status: draft by Jon (SRE) supporting the team. Reflects the team's plan (EKS, per `adrs/0001`) and the 24 Oct repo (commit 8d95781: vpc, kms, eks, ecr, rds written in `infra/`; `eks-access.tf` and `monitoring.tf` not yet). Dashed boxes are **written but not confirmed applied, or still planned**; see `REPO-FINDINGS.md` for gaps between the code and the constraints. Check with the team which environments have actually been applied; per the brief this document must match what is **actually deployed**, so update it as `vpc.tf`, `kms.tf`, `eks.tf`, `eks-access.tf`, `ecr.tf`, `rds.tf` and `monitoring.tf` are applied. **[owner]** marks facts the file owner must confirm.
+> Status: living document, first drafted by Jon (SRE). Per the brief it must match what is **actually deployed**, so update it with every change to `infra/`. Open gaps and their owners are tracked in `docs/compliance-mapping.md`. Dashed boxes in the diagram are planned or not yet built. **[owner]** marks facts the file owner must confirm.
 
 ![Architecture](architecture-diagram.png)
 Source: `architecture-diagram.dot` (`dot -Tpng -Gdpi=130 architecture-diagram.dot -o architecture-diagram.png`).
@@ -34,12 +34,12 @@ CareLink runs a telehealth booking and consultation-notes platform for clinics i
 | Encrypted at rest | RDS CMK, EBS CMK, encrypted logs, SNS and S3 state | Console flags / `describe-db-instances`. |
 | Encrypted in transit | TLS at ALB; DB requires TLS **[Krisna]** | Browser padlock; non-TLS DB connection refused. |
 | DB not public | Private DB subnets, `publicly_accessible=false`, SG allows only node/pod traffic on the DB port | SG listing; failed connection from outside. |
-| Data access restricted and logged | No standing human DB access; EKS access entries scoped (eks-access.tf); DB audit/error logs to CloudWatch (365 d); CloudTrail with alarms | Audit log group; CloudTrail event; security alarms. |
+| Data access restricted and logged | No standing human DB access; EKS access entries (`eks.tf`); DB audit/error logs to CloudWatch (365 d); CloudTrail with alarms | Audit log group; CloudTrail event; security alarms. |
 | RPO <= 24 h | Automated backups + PITR, >= 7 d retention | Backup retention, latest restorable time. |
 | RTO <= 4 h | Multi-AZ failover; documented restore runbook with timed staging drill | Drill record in `docs/sre/runbooks/db-instance-failure.md`. |
 | Staging cannot touch production | Per-environment roles, separate state keys, account guard-rail | Trust policy JSON; failed cross-environment attempt (REVIEW-NOTES items 1-2). |
 
-## 4. Monthly cost estimate (full version: `docs/monthly-cost-estimate.md`)
+## 4. Monthly cost estimate
 About $659/month with both environments running all month, about $476 if staging is only up ~160 h/month (us-east-1 list prices, 25 Oct 2026; re-check in the AWS Pricing Calculator). Drivers: **EKS control plane fee (per cluster-hour, x2 if two clusters)**, node group EC2 + EBS, NAT gateways (production: 3; staging: 1; consider VPC endpoints), RDS Multi-AZ vs single-AZ, ALB, CloudWatch log ingestion and storage, alarms and dashboard (small), KMS keys, ECR storage. Two EKS clusters plus NAT gateways are likely the largest fixed costs: say so and show staging teardown. Add an AWS Budget alert filtered on `Project=capstone-project-group-03` (the cohort tag every resource carries via Terraform `default_tags`; it also exempts our resources from the instructors' nightly cleanup).
 
 ## 5. ADRs
