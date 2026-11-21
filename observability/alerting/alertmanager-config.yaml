@@ -1,0 +1,45 @@
+
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: carelink-discord
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+
+spec:
+  route:
+    receiver: discord
+    groupBy:
+      - alertname
+      - namespace
+      - service
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    matchers:
+      - name: environment
+        value: staging
+        matchType: "="
+      # Only alerts someone should act on: drops the always-firing Watchdog
+      # heartbeat, InfoInhibitor and info-level noise (severity none or info),
+      # keeps page, ticket, critical and warning.
+      - name: severity
+        value: info|none
+        matchType: "!~"
+
+  receivers:
+    - name: discord
+      discordConfigs:
+        - apiURL:
+            name: discord-webhook
+            key: webhook-url
+          sendResolved: true
+          title: 'CareLink {{ .Status }}: {{ .CommonLabels.alertname }}'
+          message: |
+            {{ range .Alerts }}
+            **Alert:** {{ .Labels.alertname }}
+            **Severity:** {{ .Labels.severity }}
+            **Summary:** {{ .Annotations.summary }}
+            **Description:** {{ .Annotations.description }}
+            {{ end }}

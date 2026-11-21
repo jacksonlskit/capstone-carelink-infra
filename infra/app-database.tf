@@ -70,6 +70,7 @@ data "aws_iam_policy_document" "external_secrets" {
     actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
     resources = [
       local.app_db.master_user_secret[0].secret_arn,
+      aws_secretsmanager_secret.alertmanager_discord_webhook.arn,
       aws_secretsmanager_secret.grafana_admin.arn, # observability-grafana.tf
     ]
   }
