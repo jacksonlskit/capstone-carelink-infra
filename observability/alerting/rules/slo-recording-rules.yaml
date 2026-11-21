@@ -35,3 +35,32 @@ spec:
                 service="carelink"
               }[5m]
             )
+
+    - name: carelink.production.availability
+      interval: 30s
+      rules:
+        - record: carelink:production:probe_success:ratio
+          expr: |
+            avg by (environment, service) (
+              probe_success{
+                environment="production",
+                service="carelink"
+              }
+            )
+
+        - record: carelink:production:probe_failure:ratio
+          expr: |
+            1 - carelink:production:probe_success:ratio
+
+    - name: carelink.production.probe_latency
+      interval: 30s
+      rules:
+        - record: carelink:production:probe_latency:p95
+          expr: |
+            quantile_over_time(
+              0.95,
+              probe_duration_seconds{
+                environment="production",
+                service="carelink"
+              }[5m]
+            )
