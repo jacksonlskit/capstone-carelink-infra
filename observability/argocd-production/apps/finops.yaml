@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: carelink-finops
+  namespace: argocd
+spec:
+  project: observability
+
+  source:
+    repoURL: https://github.com/jacksonlskit/capstone-carelink-infra.git
+    targetRevision: main
+    path: observability/finops
+    directory:
+      recurse: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
