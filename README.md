@@ -66,8 +66,9 @@ docs/                           architecture, compliance mapping, ADRs, SLOs and
   The staging role is the same with `environment:staging`. A staging job cannot assume the production role, and a job that runs outside an environment gets no AWS access.
 - **State** ([ADR 0003](docs/adr/0003-s3-native-state-locking.md)): one S3 bucket, one key per environment, native locking. Only the pipeline roles can write state, each only its own environment's key.
 - **Reviews:** `main` in both repositories needs a pull request with one approval from someone other than the last pusher, and green checks. Production deployments need the DevOps owner's approval.
+- **Production deploy branch:** Argo CD deploys whatever is on the app repository's `env/production`, so a ruleset lets only one deploy key write it. GitHub gives that key (the production environment secret `ENV_PRODUCTION_DEPLOY_KEY`) only to the production job, after the approval, for runs from `main`. Nobody can push there directly.
 - **Cluster access:** per environment in `infra/variables.tf` (`cluster_access`). In production only the DevOps owner is cluster admin; the rest of the team is view-only.
-- **Known limits** ([ADR 0006](docs/adr/0006-environment-isolation.md)): both pipeline roles have AdministratorAccess in the shared cohort account, and the `env/*` deploy branches cannot be protected on a personal-account repository.
+- **Known limits** ([ADR 0006](docs/adr/0006-environment-isolation.md)): both pipeline roles have AdministratorAccess in the shared cohort account, and `env/staging` is not locked (staging has no approval step).
 
 ## Bootstrap
 
@@ -79,7 +80,9 @@ terraform init
 GITHUB_TOKEN=$(gh auth token) terraform apply
 ```
 
-It creates the OIDC provider, the two pipeline roles and their trust policies, the state bucket and its policy, the DNS-validated ACM certificates, the GitHub environments (with the production approval), the variables the workflows read (`AWS_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`) and the rulesets for `main`. The Snyk token is a repository secret (`SNYK_TOKEN`).
+It creates the OIDC provider, the two pipeline roles and their trust policies, the state bucket and its policy, the DNS-validated ACM certificates, the GitHub environments (with the production approval), the variables the workflows read (`AWS_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`), the rulesets for `main`, and the `env/production` lock (deploy key, ruleset, main-only production environment). The Snyk token is a repository secret (`SNYK_TOKEN`).
+
+The deploy key's private half is not in Terraform: it was generated locally and stored once with `gh secret set ENV_PRODUCTION_DEPLOY_KEY --env production --repo <owner>/capstone-carelink-app`, then deleted, so it is in neither Git nor the bootstrap state. To rotate it, generate a new pair, replace `oicd-bootstrap/keys/app-env-production-deploy-key.pub`, set the secret again and apply.
 
 ## The nightly cleanup and the morning routine
 

@@ -315,6 +315,20 @@ resource "github_repository_environment" "app_production" {
   reviewers {
     users = [data.github_user.current.id]
   }
+
+  # Only runs from main may use this environment (policy below). A workflow
+  # written on a feature branch can then never reach production credentials or
+  # the env/production deploy key, and is never even offered for approval.
+  deployment_branch_policy {
+    protected_branches     = false
+    custom_branch_policies = true
+  }
+}
+
+resource "github_repository_environment_deployment_policy" "app_production_main" {
+  repository     = local.repo_app
+  environment    = github_repository_environment.app_production.environment
+  branch_pattern = "main"
 }
 
 # -----------------------------------------------------------------------------
@@ -413,15 +427,58 @@ resource "github_repository_ruleset" "app_main_protection" {
   }
 }
 
-# No ruleset protects the env/<environment> branches (the deployment records
-# Argo CD deploys from). It would have to let the app pipeline through: its
-# promote step pushes with GITHUB_TOKEN, as the GitHub Actions app. GitHub only
-# accepts an app as a ruleset bypass actor when it belongs to the organization
-# that owns the repository, and these repositories belong to a personal
-# account: the apply on 21 Nov 2026 failed with "422 Actor GitHub Actions
-# integration must be part of the ruleset source or owner organization".
-# In an organization the ruleset works as designed. ADR 0006 records the gap
-# and what protects env/* until then.
+# env/production is what Argo CD deploys to production, so only the approved
+# production job may write it:
+#   1. A write-access deploy key on the app repository (below). Its private half
+#      exists only as the secret ENV_PRODUCTION_DEPLOY_KEY of the app's
+#      production environment, which GitHub hands to a job only after the
+#      required reviewer approves it, and only for runs from main (above).
+#      The private key is never in this state or in Git: it was generated on
+#      the DevOps owner's machine, stored with `gh secret set`, then deleted.
+#   2. A ruleset that blocks creating, updating, deleting or force-pushing
+#      env/production for everyone, admins and the pipeline's GITHUB_TOKEN
+#      included, except deploy keys (bypass actor DeployKey). Only a repository
+#      admin can add a deploy key, and this is the only one.
+# Why a deploy key and not the GitHub Actions app: on a personal-account
+# repository GitHub refuses an app as a bypass actor (422 on 21 Nov 2026,
+# "Actor GitHub Actions integration must be part of the ruleset source or
+# owner organization"); a deploy key belongs to the repository itself, and a
+# disabled test ruleset proved it is accepted (22 Nov 2026).
+# env/staging stays open on purpose: staging has no approval step to protect.
+# Rotate the key: new key pair, replace the .pub file, `gh secret set` again,
+# apply (the deploy key is replaced, the old private key stops working).
+resource "github_repository_deploy_key" "app_env_production" {
+  repository = local.repo_app
+  title      = "carelink-cd-env-production (cd.yaml production job only)"
+  key        = trimspace(file("${path.module}/keys/app-env-production-deploy-key.pub"))
+  read_only  = false
+}
+
+resource "github_repository_ruleset" "app_env_production_lock" {
+  name        = "app-env-production-lock"
+  repository  = local.repo_app
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["refs/heads/env/production"]
+      exclude = []
+    }
+  }
+
+  bypass_actors {
+    actor_type  = "DeployKey"
+    bypass_mode = "always"
+  }
+
+  rules {
+    creation         = true
+    update           = true
+    deletion         = true
+    non_fast_forward = true
+  }
+}
 
 resource "github_repository_ruleset" "infra_main_protection" {
   name        = "infra-main-protection"
