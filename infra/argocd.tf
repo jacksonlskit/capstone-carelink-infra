@@ -44,25 +44,23 @@ locals {
   # It used to be applied by hand with kubectl, so a rebuilt cluster would not
   # have got its monitoring back; now it comes back with the rest.
   observability_root_app = {
-    for name, app in {
-      "carelink-observability" = {
-        namespace = "argocd"
-        project   = "default"
-        source = {
-          repoURL        = var.observability_repo_url
-          targetRevision = "main"
-          path           = "observability/argocd"
-          directory      = { recurse = true }
-        }
-        destination = {
-          server    = "https://kubernetes.default.svc"
-          namespace = "argocd"
-        }
-        syncPolicy = {
-          automated = { prune = true, selfHeal = true }
-        }
+    "carelink-observability" = {
+      namespace = "argocd"
+      project   = "default"
+      source = {
+        repoURL        = var.observability_repo_url
+        targetRevision = "main"
+        path           = var.environment == "production" ? "observability/argocd-production" : "observability/argocd"
+        directory      = { recurse = true }
       }
-    } : name => app if var.environment == "staging"
+      destination = {
+        server    = "https://kubernetes.default.svc"
+        namespace = "argocd"
+      }
+      syncPolicy = {
+        automated = { prune = true, selfHeal = true }
+      }
+    }
   }
 }
 

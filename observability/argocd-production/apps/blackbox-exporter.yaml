@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: carelink-blackbox-exporter
+  namespace: argocd
+
+spec:
+  project: observability
+
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-blackbox-exporter
+      targetRevision: 11.21.3
+      helm:
+        releaseName: carelink-blackbox-exporter
+        values: |
+          fullnameOverride: carelink-blackbox-exporter
+
+          config:
+            modules:
+              http_200:
+                prober: http
+                timeout: 5s
+                http:
+                  method: GET
+                  valid_status_codes:
+                    - 200
+
+    - repoURL: https://github.com/jacksonlskit/capstone-carelink-infra.git
+      targetRevision: main
+      path: observability/probes/production
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

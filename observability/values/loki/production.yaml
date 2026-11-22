@@ -7,3 +7,12 @@ loki:
 serviceAccount:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::255945442255:role/carelink-production-loki-s3-role
+
+lokiCanary:
+  enabled: false
+
+resultsCache:
+  enabled: false
+
+test:
+  enabled: false
