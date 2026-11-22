@@ -1,0 +1,14 @@
+# Infracost projects: the same Terraform (infra/) priced once per environment.
+# Used by scripts/export-infracost-metrics.py and the infracost.yaml workflow.
+version: '0.3'
+projects:
+  - path: infra
+    name: carelink-staging
+    terraform:
+      vars:
+        environment: staging
+  - path: infra
+    name: carelink-production
+    terraform:
+      vars:
+        environment: production
