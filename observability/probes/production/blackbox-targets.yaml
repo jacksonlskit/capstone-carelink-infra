@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: carelink-production-health
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+
+spec:
+  jobName: carelink-production-health
+  interval: 30s
+  scrapeTimeout: 10s
+  module: http_200
+
+  prober:
+    url: carelink-blackbox-exporter.monitoring.svc.cluster.local:9115
+    scheme: http
+    path: /probe
+
+  targets:
+    staticConfig:
+      static:
+        - https://carelink-production.sctp-sandbox.com/actuator/health
+      labels:
+        environment: production
+        service: carelink
