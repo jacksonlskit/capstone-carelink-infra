@@ -10,7 +10,7 @@ The app pipeline deployed by running `kubectl apply -k` from GitHub Actions agai
 ## Decision
 - Argo CD runs in each cluster, installed by Terraform (`infra/argocd.tf`, `argo-cd` chart 10.18.0) together with its one Application (`argocd-apps` chart). It syncs the app repo's Helm chart `charts/carelink` from the branch `env/<environment>` into the namespace `<environment>`, with automated sync, prune and self-heal.
 - The app pipeline (`cd.yaml`) builds and scans images, then records each deployment as a commit on `env/staging`. After the GitHub `production` environment approval, it copies the same images to the production ECR repositories and records the deployment on `env/production`. It waits for Argo CD to report *Synced* and *Healthy* before passing.
-- `main` stays protected (PR plus one review). The `env/*` branches are deployment records written only by the pipeline. This avoids CI needing to bypass the review rule to change image tags.
+- `main` stays protected (PR plus one review). The `env/*` branches are deployment records written only by the pipeline. This avoids CI needing to bypass the review rule to change image tags. `env/production` is locked by a ruleset so that only the approved production job can write it, with a deploy key (ADR 0006).
 - The Kustomize manifests (`k8s/`) and the `kubectl apply` deploy were removed, leaving one source of truth.
 
 ## Alternatives considered
@@ -23,4 +23,4 @@ The app pipeline deployed by running `kubectl apply -k` from GitHub Actions agai
 - `git log origin/env/production` is the production deployment history (who, which commit, which run).
 - Manual `kubectl` changes are reverted by self-heal: changes must go through Git.
 - Argo CD adds components to operate in each cluster (application controller, repo server, API server, Redis, ApplicationSet controller). Its UI is not exposed publicly (port-forward only), so there is no extra internet-facing surface.
-- The pipeline's GITHUB_TOKEN can push to `env/*`, so access to edit workflows on `main` (protected by review) is what guards production, together with the `production` environment approval.
+- Argo CD trusts whatever is on `env/<environment>`, so that branch is the real gate. `env/production` accepts pushes only from the deploy key that GitHub gives the production job after the `production` approval, for runs from `main`; nobody can push there directly. `env/staging` is written with the pipeline's GITHUB_TOKEN and is not locked (staging has no approval step).

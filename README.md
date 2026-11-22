@@ -1,214 +1,103 @@
-# Capstone CareLink — Cloud Infrastructure & OIDC Foundation
+# CareLink Health: cloud infrastructure
 
-Production-grade Infrastructure-as-Code (IaC) repository managing the automated AWS cloud infrastructure, keyless OpenID Connect (OIDC) identity federation, and GitHub Actions CI/CD pipelines for the CareLink platform.
+Terraform, pipelines and documentation for CareLink Health (capstone Use Case B): Spring PetClinic Cloud on Amazon EKS in `us-east-1`, with a staging and a production environment. The application code, its Helm chart and its delivery pipeline live in [capstone-carelink-app](https://github.com/jacksonlskit/capstone-carelink-app).
 
----
+## At a glance
 
-## 1. Architecture Overview
+- Two environments, each with its own VPC over three AZs, EKS cluster, RDS MySQL database and ALB. Production runs one NAT gateway per AZ and Multi-AZ MySQL; staging is a cost-reduced copy.
+- GitHub Actions applies this repo with Terraform using short-lived OIDC credentials (no stored keys). Production changes need the DevOps owner's approval.
+- Argo CD in each cluster deploys the app from the app repo's `env/<environment>` branch (GitOps).
+- Staging runs a monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager to Discord) deployed by Argo CD from `observability/`; both environments have CloudWatch alarms.
+- Architecture and diagram: [docs/architecture.md](docs/architecture.md). Evidence for each hard constraint: [docs/compliance-mapping.md](docs/compliance-mapping.md). Decisions: [docs/adr/](docs/adr/). SLOs and runbooks: [docs/sre/](docs/sre/).
 
-
-
-+------------------------------------------+
-|             GitHub Platform              |
-|  - capstone-carelink-infra               |
-|  - capstone-carelink-app                 |
-+--------------------+---------------------+
-|
-| Short-Lived OIDC JWT
-v
-+--------------------+---------------------+
-|        AWS IAM OIDC Provider             |
-| (token.actions.githubusercontent.com)    |
-+--------------------+---------------------+
-|
-+--------------------------+--------------------------+
-| STS:AssumeRoleWithWebIdentity                       |
-v                                                     v
-+----------------------------+                        +----------------------------+
-| carelink-github-staging    |                        | carelink-github-production |
-| (AdministratorAccess)      |                        | (AdministratorAccess)      |
-+--------------+-------------+                        +--------------+-------------+
-|                                                     |
-| Deployment & Speculative Plans                      | Gatekeeper Approval Required
-v                                                     v
-+----------------------------+                        +----------------------------+
-|   Staging Infrastructure   |                        | Production Infrastructure  |
-+----------------------------+                        +----------------------------+
-\                                                     /
--------------------+-------------------------------/
-| State Locking (Native S3)
-v
-+----------------------------+
-|   carelink-infra-state-*   |
-|   (Terraform 1.10+ Native) |
-+----------------------------+
-
-
----
-
-## 2. Key Architectural Highlights
-
-* **Keyless OIDC Identity Federation:** Eliminates permanent IAM access keys (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). GitHub Actions authenticates dynamically using cryptographically signed JSON Web Tokens (JWT) verified by AWS STS.
-* **ID-Resilient Subject Matching:** Accommodates GitHub's internal numerical Account ID and Repository ID token injection (`repo:<owner>@<id>/<repo>@<id>:...`) using scoped prefix wildcards (`repo:jacksonlskit*`).
-* **Native S3 State Locking (No DynamoDB):** Leverages Terraform `>= 1.10.0` native conditional writes against Amazon S3 (`PutObject` with preconditions), removing DynamoDB costs and operational complexity.
-* **Environment-Scoped RBAC:** GitHub Environments (`staging` and `production`) inject their respective `AWS_ROLE_ARN` variables dynamically, ensuring strict boundaries between non-prod and prod assets.
-* **Shift-Left Security:** Automated Snyk Infrastructure-as-Code (IaC) vulnerability scanning runs on every Pull Request and acts as a pre-deployment gate before execution.
-* **Branch Protection & Rulesets:** GitHub Rulesets enforce pull request approvals, status check verification (`Terraform Plan (staging)`, `Terraform Plan (production)`), and prevent forced pushes/branch deletions on `main`.
-
----
-
-## 3. Directory Layout
-
-## Repository Structure
+## Repository layout
 
 ```text
-capstone-carelink-infra/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                     # PR verification: Lint, Snyk IaC scan, Speculative Plans
-│       ├── cd.yml                     # Delivery: Apply Staging, Reviewer Approval Gate, Apply Prod
-│       └── sre.yml                    # Observability: Scheduled CloudWatch alarms & log audits
-│
-├── docs/                              # Capstone Deliverables & Operational Documentation
-│   ├── adr/                           # Architecture Decision Records (0005-0008)
-│   ├── architecture-diagram.png       # Live end-to-end architecture diagram
-│   ├── compliance-mapping.md          # Hard constraint compliance mapping matrix
-│   └── sre/runbooks/db-instance-failure.md            # SRE runbook for failover & incident response
-│
-├── backend.tf                         # Empty S3 backend declaration (injected via CI/CD)
-├── providers.tf                       # AWS, Kubernetes, and Helm provider constraints
-├── variables.tf                       # Input variable declarations
-├── outputs.tf                         # Output values (EKS cluster endpoint, RDS endpoints, ECR URLs)
-│
-├── vpc.tf                             # Multi-AZ VPC: 3 Public & 3 Private Subnets + NAT Gateways
-├── kms.tf                             # Customer Managed Keys (CMK) for EBS, RDS, and Secrets
-├── eks.tf                             # EKS Cluster (v1.30), OIDC IRSA provider, Managed Node Groups
-├── ecr.tf                             # Amazon ECR repositories for all 4 microservices
-├── rds.tf                             # Multi-AZ RDS MySQL/PostgreSQL in private subnets (KMS encrypted)
-├── monitoring.tf                      # CloudWatch Alarms, SNS alert topics, and SRE Dashboard
-│
-├── .gitignore                         # Git exclusion rules (.terraform/, *.tfstate)
-└── README.md                          # Repository documentation, setup, and runbooks
+.github/workflows/
+  ci.yaml                       PR checks: fmt/validate, Snyk IaC, plans for staging and production
+  cd.yaml                       main: Snyk, apply staging, approval, apply production
+  observability-validate.yaml   Prometheus alert rules (promtool) and Grafana dashboards
+  sre-health-check.yaml         scheduled check of CloudWatch alarms and log groups
+oicd-bootstrap/main.tf          one-time setup, applied locally: OIDC roles, state bucket, ACM
+                                certificates, GitHub environments, variables and rulesets
+infra/                          the platform, applied by the pipelines per environment
+  vpc.tf eks.tf node-tags.tf    network, EKS cluster, node group, cluster access per environment
+  rds.tf app-database.tf        MySQL with TLS required, the app's database secret
+  kms.tf ecr.tf                 customer-managed keys, image repositories
+  lbc.tf dns.tf ebs-csi.tf      load balancer controller, external-dns, EBS CSI driver and the
+                                encrypted default storage class
+  argocd.tf                     Argo CD and its Applications (the app, and staging monitoring)
+  monitoring*.tf observability-*.tf alerts-discord.tf lambda/
+                                CloudWatch alarms and dashboard, SNS, Discord bridge, AWS side of
+                                the monitoring stack (Loki bucket, Grafana and Discord secrets)
+  policies/                     IAM policy documents (load balancer controller)
+  charts/manifests/             small local Helm chart for plain Kubernetes objects
+observability/                  staging monitoring stack, deployed by Argo CD
+scripts/                        recovery after the nightly cleanup: recover-state.sh,
+                                generate-imports.sh, clean-wipe-leftovers.sh
+docs/                           architecture, compliance mapping, ADRs, SLOs and runbooks
+```
 
+## Pipelines
 
-4. Workflows & Pipelines
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yaml` | Pull request to `main`; pushes to `feature/**` | `terraform fmt` and `validate`, Snyk IaC scan (fails on high), then a plan for staging and for production (the production plan waits for approval). Each plan first runs `scripts/recover-state.sh`. |
+| `cd.yaml` | Push to `main`, or manual | Snyk check, apply to staging, then apply to production after the `production` environment approval. |
+| `observability-validate.yaml` | Pull requests and pushes to `main` that change alert rules or dashboards under `observability/` | Prometheus rules with `promtool`, Grafana dashboard JSON. |
+| `sre-health-check.yaml` | Every 6 hours, or manual | Lists CloudWatch alarms in ALARM and recent log groups. It runs in the production environment, so each run waits for approval. |
 
-Pipeline	Target File	Trigger	Purpose
-CI (PR Verification)	.github/workflows/ci.yml	pull_request to main	Validates formatting (terraform fmt), runs Snyk IaC scan, and runs speculative plans for Staging and Production.
-CD (Delivery)	.github/workflows/cd.yml	push to main	Pre-deployment Snyk check, automatic deploy to Staging, manual reviewer approval gate, deploy to Production.
-SRE (Observability)	.github/workflows/sre.yml	Cron (0 */6 * * *) & Manual	Queries active CloudWatch alarms in ALARM status and inspects recent log groups in us-east-1.
+## Security model
 
-5. Security & Trust Policy Specifications
+- **Keyless credentials** ([ADR 0002](docs/adr/0002-keyless-oidc-pipelines.md)): a GitHub OIDC provider and one IAM role per environment. Each role trusts only its own GitHub environment, matched exactly on GitHub's immutable subject. The production role's condition:
 
-The GitHub Actions Subject Claim Structure
-
-GitHub Actions emits OIDC tokens formatted with internal account and repository IDs:
-
-repo:<github_owner>@<github_user_id>/<repo_name>@<repo_id>:environment:<environment_name>
-
-
-AWS IAM Trust Relationship
-
-To guarantee that tokens are accepted while remaining strictly isolated to the authorized owner account, the trust policy enforces:
-
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": [
-            "repo:jacksonlskit*capstone-carelink-infra*",
-            "repo:jacksonlskit*capstone-carelink-app*",
-            "repo:jacksonlskit*"
-          ]
-        }
-      }
+  ```json
+  "Condition": {
+    "StringEquals": {
+      "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+      "token.actions.githubusercontent.com:sub": [
+        "repo:<owner>@<owner id>/capstone-carelink-infra@<repo id>:environment:production",
+        "repo:<owner>@<owner id>/capstone-carelink-app@<repo id>:environment:production"
+      ]
     }
-  ]
-}
+  }
+  ```
 
+  The staging role is the same with `environment:staging`. A staging job cannot assume the production role, and a job that runs outside an environment gets no AWS access.
+- **State** ([ADR 0003](docs/adr/0003-s3-native-state-locking.md)): one S3 bucket, one key per environment, native locking. Only the pipeline roles can write state, each only its own environment's key.
+- **Reviews:** `main` in both repositories needs a pull request with one approval from someone other than the last pusher, and green checks. Production deployments need the DevOps owner's approval.
+- **Production deploy branch:** Argo CD deploys whatever is on the app repository's `env/production`, so a ruleset lets only one deploy key write it. GitHub gives that key (the production environment secret `ENV_PRODUCTION_DEPLOY_KEY`) only to the production job, after the approval, for runs from `main`. Nobody can push there directly.
+- **Cluster access:** per environment in `infra/variables.tf` (`cluster_access`). In production only the DevOps owner is cluster admin; the rest of the team is view-only.
+- **Known limits** ([ADR 0006](docs/adr/0006-environment-isolation.md)): both pipeline roles have AdministratorAccess in the shared cohort account, and `env/staging` is not locked (staging has no approval step).
 
-6. Initial Bootstrapping & Setup
+## Bootstrap
 
-Because CI/CD pipelines rely on the IAM roles to authenticate, the bootstrap layer must be provisioned once from a local administrative workstation.
+The pipelines authenticate with roles that the bootstrap creates, so the bootstrap is applied from the DevOps owner's machine and keeps its state locally:
 
-Prerequisites
-
-⚬ Terraform CLI >= 1.10.0
-⚬ AWS CLI authenticated with local Administrator access
-⚬ GitHub Personal Access Token (Classic) with repo, admin:repo_hook, and workflow scopes
-
-Step 1: Deploy Bootstrap Infrastructure
-
-cd bootstrap
-
-# Export GitHub token for the GitHub Terraform provider
-export GITHUB_TOKEN="ghp_yourPersonalAccessTokenHere"
-
-# Initialize and deploy
+```bash
+cd oicd-bootstrap
 terraform init
-terraform apply
+GITHUB_TOKEN=$(gh auth token) terraform apply
+```
 
+It creates the OIDC provider, the two pipeline roles and their trust policies, the state bucket and its policy, the DNS-validated ACM certificates, the GitHub environments (with the production approval), the variables the workflows read (`AWS_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`), the rulesets for `main`, and the `env/production` lock (deploy key, ruleset, main-only production environment). The Snyk token is a repository secret (`SNYK_TOKEN`).
 
-This provisions:
+The deploy key's private half is not in Terraform: it was generated locally and stored once with `gh secret set ENV_PRODUCTION_DEPLOY_KEY --env production --repo <owner>/capstone-carelink-app`, then deleted, so it is in neither Git nor the bootstrap state. To rotate it, generate a new pair, replace `oicd-bootstrap/keys/app-env-production-deploy-key.pub`, set the secret again and apply.
 
-1. The AWS IAM OpenID Connect Provider (token.actions.githubusercontent.com).
-2. The remote S3 state bucket with AES256 encryption, bucket versioning, public access blocks, and a bucket policy that lets only the pipeline roles write the state.
-3. IAM Roles: carelink-github-staging-role and carelink-github-production-role.
-4. GitHub Environments: staging and production (with manual approval gate on production).
-5. GitHub Environment Variables: AWS_ROLE_ARN pointing to the respective IAM roles.
-6. GitHub Global Variables: AWS_REGION and TF_STATE_BUCKET.
-7. GitHub Branch Protection Rulesets for main.
+## The nightly cleanup and the morning routine
 
-Step 2: Configure Repository Secrets
+The cohort account is cleaned every night (about 22:00 UTC): untagged resources, the Terraform state objects and every IAM policy attachment are deleted. Everything we keep carries `Project = capstone-project-group-03` through the Terraform `default_tags`. Each morning:
 
-To enable automated security scans:
+1. Re-apply the bootstrap from `main` (it restores the pipeline roles' policy attachments): `git switch --detach origin/main`, then the apply above. Expect 2 to add.
+2. Run the deployment pipeline: `gh workflow run cd.yaml --ref main`. Its first step adopts every resource that still exists (import blocks), then applies.
+3. Approve production, and check that the apply reports 0 destroyed.
 
-1. Navigate to Settings > Secrets and variables > Actions on capstone-carelink-infra.
-2. Click New repository secret.
-3. Name: SNYK_TOKEN
-4. Value: Paste your Snyk API Token.
+Details: [docs/sre/runbooks/state-recovery-after-cleanup.md](docs/sre/runbooks/state-recovery-after-cleanup.md).
 
-7. Operating & Deployment Procedures
+## Making a change
 
-Making Infrastructure Changes
+1. Branch from `main`, commit, push and open a pull request.
+2. CI runs the plans for both environments (approve the production plan run); a teammate reviews.
+3. Merge: CD applies to staging, then waits for the production approval.
 
-1. Create a feature branch:
-   git checkout -b feature/my-infrastructure-update
-   
-2. Commit changes and push to GitHub:
-   git add .
-   git commit -m "feat: add new resource"
-   git push origin feature/my-infrastructure-update
-   
-3. Open a Pull Request targeting main.
-4. Review the automated status checks in GitHub Actions:
-  ⚬ Terraform Lint & Validate
-  ⚬ Snyk IaC Security Scan
-  ⚬ Terraform Plan (staging)
-  ⚬ Terraform Plan (production)
-5. Once approved and checks pass, merge the Pull Request.
-
-Only the pipeline applies changes. The state bucket's policy lets only the two GitHub pipeline roles write the staging and production state, so a `terraform apply` from a laptop stops with `AccessDenied` while taking the state lock, before it changes anything. To preview a change locally, run `terraform plan -lock=false`. The break-glass procedure is in the comments of `oicd-bootstrap/main.tf`.
-
-Production Promotion
-
-1. Merging to main triggers .github/workflows/cd.yml.
-2. Staging applies automatically.
-3. The pipeline halts at the Deploy to Production stage.
-4. Go to Actions > Select the active run > Click Review deployments > Select production > Click Approve and deploy.
-
-Running Ad-Hoc SRE Diagnostics
-
-1. Go to Actions > SRE: Health & Monitoring Check.
-2. Click Run workflow > Select branch main.
-3. Check the output logs for active alarms or CloudWatch log group statistics.
+Only the pipeline applies: a local `terraform apply` is refused by the state bucket policy while taking the lock, before anything changes. To preview a change locally, run `terraform plan -lock=false`. The break-glass procedure is in the comments of `oicd-bootstrap/main.tf`.

@@ -151,6 +151,8 @@ lookup() { # prints the import ID for one resource, or nothing if it does not ex
 
     # ---- IAM ---------------------------------------------------------------------
     aws_iam_role) aws_q iam get-role --role-name "$name" --query Role.RoleName ;;
+    # Customer-managed policy (e.g. the load balancer controller's): import ID is its ARN.
+    aws_iam_policy) aws_q iam get-policy --policy-arn "arn:aws:iam::${ACCOUNT}:policy/${name}" --query Policy.Arn ;;
     aws_iam_role_policy_attachment)
       local role policy
       role=$(field "$r" .after.role)
