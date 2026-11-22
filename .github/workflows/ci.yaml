@@ -155,6 +155,8 @@ jobs:
 
     env:
       TF_IN_AUTOMATION: "true"
+      # Enables the SNS to Discord bridge in production (same switch as staging).
+      TF_VAR_discord_alerts_enabled: "true"
 
     steps:
       - name: Checkout Code
