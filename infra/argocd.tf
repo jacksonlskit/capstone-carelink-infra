@@ -50,7 +50,7 @@ locals {
       source = {
         repoURL        = var.observability_repo_url
         targetRevision = "main"
-        path           = var.environment == "production" ? "observability/argocd/production" : "observability/argocd"
+        path           = var.environment == "production" ? "observability/argocd-production" : "observability/argocd"
         directory      = { recurse = true }
       }
       destination = {
