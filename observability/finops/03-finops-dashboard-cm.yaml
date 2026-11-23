@@ -24,25 +24,22 @@ data:
         "list": [
           {
             "name": "env",
-            "label": "Active Cluster Env",
-            "type": "custom",
-            "query": "staging,production",
-            "current": {
-              "text": "staging",
-              "value": "staging"
+            "label": "Environment (this cluster)",
+            "description": "Read from this cluster's own probe job (carelink-<env>-health), so the live node count and the price always belong to the same environment",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
             },
-            "options": [
-              {
-                "text": "staging",
-                "value": "staging",
-                "selected": true
-              },
-              {
-                "text": "production",
-                "value": "production",
-                "selected": false
-              }
-            ]
+            "definition": "label_values(probe_success, job)",
+            "query": {
+              "query": "label_values(probe_success, job)",
+              "refId": "env"
+            },
+            "regex": "/^carelink-(.+)-health$/",
+            "refresh": 1,
+            "includeAll": false,
+            "multi": false
           }
         ]
       },
@@ -232,12 +229,12 @@ data:
           "targets": [
             {
               "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"}))",
-              "legendFormat": "Live {{env}} Monthly Run-Rate",
+              "legendFormat": "Live $env Monthly Run-Rate",
               "refId": "A"
             },
             {
               "expr": "sum(carelink_infracost_baseline_monthly_usd{environment=\"production\"})",
-              "legendFormat": "Production HA Baseline ($541.53/mo)",
+              "legendFormat": "Production HA Baseline",
               "refId": "B"
             }
           ],

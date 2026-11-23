@@ -1,0 +1,119 @@
+name: Infracost (cost of each change)
+
+# Cost visibility for infrastructure pull requests (ADR 0009). Informational:
+# neither job is a required check, so an Infracost outage never blocks a merge.
+#   cost-diff:    posts the monthly cost of staging and production, and what this
+#                 pull request changes, as one PR comment (updated on each push)
+#   finops-drift: warns when observability/finops/01-infracost-metrics-cm.yaml
+#                 (the numbers Grafana shows) no longer matches the Terraform
+# Neither job uses AWS credentials or a GitHub environment: Infracost reads the
+# Terraform files and prices them; it does not look at the AWS account.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - "infracost.yml"
+      - "observability/finops/**"
+      - "scripts/export-infracost-metrics.py"
+      - ".github/workflows/infracost.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infracost-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Infracost service-account token (repository secret). Pull requests from
+  # forks do not get it; both jobs then skip instead of failing.
+  INFRACOST_CLI_AUTHENTICATION_TOKEN: ${{ secrets.INFRACOST_CLI_AUTHENTICATION_TOKEN }}
+
+jobs:
+  cost-diff:
+    name: Cost diff comment
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Infracost's CI image (CLI v2), pinned by version and digest like the Snyk
+    # action in ci.yaml, so an upstream change cannot alter this job.
+    container: ghcr.io/infracost/ci:2.1.5@sha256:e7ddb5c9026624456b47ec4208da00ef942ee390b29cb331d648b8c0d8731ee5
+    permissions:
+      contents: read
+      pull-requests: write # infracost-ci posts and updates its own PR comment
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check that the Infracost token is available
+        id: token
+        run: |
+          if [ -z "$INFRACOST_CLI_AUTHENTICATION_TOKEN" ]; then
+            echo "::notice::INFRACOST_CLI_AUTHENTICATION_TOKEN is not available (fork PR?), skipping the cost diff."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout the base branch
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Checkout the pull request
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+
+      - name: Price both and post the difference
+        if: steps.token.outputs.present == 'true'
+        run: infracost-ci diff --base-path base --head-path head
+
+  finops-drift:
+    name: FinOps metrics drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Same CLI version as the one used locally, so both produce the same numbers.
+      INFRACOST_VERSION: v2.20.0
+      # From infracost-linux-amd64.tar.gz.sha256 in that GitHub release.
+      INFRACOST_SHA256: bc52d5601c07c2519517321285ce62b417c68baabad9459ae316d842c412328c
+    steps:
+      - name: Check that the Infracost token is available
+        id: token
+        run: |
+          if [ -z "$INFRACOST_CLI_AUTHENTICATION_TOKEN" ]; then
+            echo "::notice::INFRACOST_CLI_AUTHENTICATION_TOKEN is not available (fork PR?), skipping the drift check."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install the Infracost CLI (pinned, checksum verified)
+        if: steps.token.outputs.present == 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/infracost.tar.gz" \
+            "https://github.com/infracost/cli/releases/download/${INFRACOST_VERSION}/infracost-linux-amd64.tar.gz"
+          echo "${INFRACOST_SHA256}  $RUNNER_TEMP/infracost.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/infracost"
+          tar -xzf "$RUNNER_TEMP/infracost.tar.gz" -C "$RUNNER_TEMP/infracost"
+          bin=$(find "$RUNNER_TEMP/infracost" -type f -name 'infracost*' -perm -u+x | head -n1)
+          sudo install "$bin" /usr/local/bin/infracost
+          infracost --version
+
+      - name: Compare the committed cost metrics with the Terraform
+        if: steps.token.outputs.present == 'true'
+        run: scripts/export-infracost-metrics.py --check
