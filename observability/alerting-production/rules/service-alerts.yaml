@@ -1,0 +1,49 @@
+apiVersion: ://coreos.com
+kind: PrometheusRule
+metadata:
+  name: carelink-service-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: carelink.production.services
+      rules:
+        - alert: CareLinkProductionServiceReplicaRedundancyLost
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="production",
+              deployment=~"api-gateway|customers-service|vets-service|visits-service"
+            } < 2
+          for: 5m
+          labels:
+            severity: page
+            environment: production
+          annotations:
+            summary: "CareLink production service has fewer than two available replicas"
+            description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has fewer than two available replicas for 5 minutes. Investigate pod health, scheduling and node capacity."
+
+        - alert: CareLinkProductionHealthProbeFailed
+          expr: |
+            probe_success{
+              environment="production",
+              service="carelink"
+            } == 0
+          for: 2m
+          labels:
+            severity: page
+            environment: production
+            service: carelink
+          annotations:
+            summary: "CareLink production external health probe failed"
+            description: "The external CareLink production health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
+
+        - alert: CareLinkProductionTestAlert
+          expr: vector(1)
+          for: 10s
+          labels:
+            severity: warning
+            environment: production
+          annotations:
+            summary: "Test alert triggered from Production Prometheus"
+            description: "Verifying end-to-end Prometheus -> Alertmanager -> Discord delivery for Production."

@@ -1,4 +1,4 @@
-apiVersion: monitoring.coreos.com/v1alpha1
+apiVersion: ://coreos.comalpha1
 kind: AlertmanagerConfig
 metadata:
   name: carelink-discord
@@ -17,9 +17,6 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     matchers:
-      # Only alerts someone should act on: drops the always-firing Watchdog
-      # heartbeat, InfoInhibitor and info-level noise (severity none or info),
-      # keeps page, ticket, critical and warning.
       - name: severity
         value: info|none
         matchType: "!~"
@@ -27,11 +24,6 @@ spec:
       - matchers:
           - name: environment
             value: staging
-            matchType: "="
-        receiver: discord
-      - matchers:
-          - name: environment
-            value: production
             matchType: "="
         receiver: discord
 
@@ -42,11 +34,12 @@ spec:
             name: discord-webhook
             key: webhook-url
           sendResolved: true
-          title: 'CareLink {{ .Status }}: {{ .CommonLabels.alertname }}'
+          title: '{{ if eq .Status "firing" }}🟡 [STAGING ALERT]{{ else }}✅ [STAGING RESOLVED]{{ end }} {{ .CommonLabels.alertname }}'
           message: |
             {{ range .Alerts }}
+            **Environment:** STAGING
             **Alert:** {{ .Labels.alertname }}
             **Severity:** {{ .Labels.severity }}
             **Summary:** {{ .Annotations.summary }}
-            **Description:** {{ .Annotations.description }}
+            **Action / Details:** {{ .Annotations.description }}
             {{ end }}
