@@ -37,3 +37,4 @@ spec:
           annotations:
             summary: "CareLink production external health probe failed"
             description: "The external CareLink production health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
+            description: "The external CareLink production health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
