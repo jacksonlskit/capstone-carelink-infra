@@ -114,6 +114,8 @@ jobs:
       TF_IN_AUTOMATION: "true"
       # Enables the SNS to Discord bridge in production (same switch as staging).
       TF_VAR_discord_alerts_enabled: "true"
+      # SLO alarms (availability burn, p95 latency). Enabled in production after running cleanly in staging.
+      TF_VAR_monitor_alb: "true"
 
     steps:
       - name: Checkout Code
