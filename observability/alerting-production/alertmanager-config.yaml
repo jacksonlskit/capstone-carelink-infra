@@ -1,4 +1,4 @@
-apiVersion: ://coreos.comalpha1
+apiVersion: monitoring.coreos.com/v1alpha1
 kind: AlertmanagerConfig
 metadata:
   name: carelink-discord

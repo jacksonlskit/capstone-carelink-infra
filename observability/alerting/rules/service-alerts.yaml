@@ -37,13 +37,3 @@ spec:
           annotations:
             summary: "CareLink staging external health probe failed"
             description: "The external CareLink staging health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
-
-        - alert: CareLinkStagingTestAlert
-          expr: vector(1)
-          for: 10s
-          labels:
-            severity: warning
-            environment: staging
-          annotations:
-            summary: "Test alert triggered from Staging Prometheus"
-            description: "Verifying end-to-end Prometheus -> Alertmanager -> Discord delivery for Staging."

@@ -1,4 +1,4 @@
-apiVersion: ://coreos.com
+apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: carelink-service-alerts
@@ -37,13 +37,3 @@ spec:
           annotations:
             summary: "CareLink production external health probe failed"
             description: "The external CareLink production health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
-
-        - alert: CareLinkProductionTestAlert
-          expr: vector(1)
-          for: 10s
-          labels:
-            severity: warning
-            environment: production
-          annotations:
-            summary: "Test alert triggered from Production Prometheus"
-            description: "Verifying end-to-end Prometheus -> Alertmanager -> Discord delivery for Production."
