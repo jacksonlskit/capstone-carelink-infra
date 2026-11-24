@@ -58,6 +58,8 @@ jobs:
       # scripts/recover-state.sh; otherwise the recovery cannot adopt these
       # resources and the apply fails with "already exists".
       TF_VAR_discord_alerts_enabled: "true"
+      # SLO alarms (availability burn, p95 latency). Staging first; production after they survive a cleanup cycle.
+      TF_VAR_monitor_alb: "true"
 
     steps:
       - name: Checkout Code
