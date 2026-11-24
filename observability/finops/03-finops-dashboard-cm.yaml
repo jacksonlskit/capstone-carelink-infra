@@ -1,0 +1,249 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: carelink-finops-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  carelink-finops-cost.json: |
+    {
+      "uid": "carelink-finops-cost",
+      "title": "CareLink FinOps & AWS Cost Run-Rate",
+      "tags": [
+        "carelink",
+        "finops",
+        "infracost",
+        "aws"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "name": "env",
+            "label": "Environment (this cluster)",
+            "description": "Read from this cluster's own probe job (carelink-<env>-health), so the live node count and the price always belong to the same environment",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "definition": "label_values(probe_success, job)",
+            "query": {
+              "query": "label_values(probe_success, job)",
+              "refId": "env"
+            },
+            "regex": "/^carelink-(.+)-health$/",
+            "refresh": 1,
+            "includeAll": false,
+            "multi": false
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Live Active Cluster Run-Rate (Hybrid EC2)",
+          "description": "Fixed AWS IaC costs + live EC2 worker node count * per-node rate",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"}))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 500
+                  },
+                  {
+                    "color": "red",
+                    "value": 650
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Live EC2 Compute Run-Rate",
+          "description": "Scales automatically as EKS nodes are added or removed",
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"})",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "blue"
+              }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Active EKS Worker Nodes",
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 4,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "count(kube_node_info)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "purple"
+              }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Combined 24/7 IaC Run-Rate (Staging + Prod)",
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 8,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(carelink_infracost_baseline_monthly_usd)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "orange"
+              }
+            }
+          }
+        },
+        {
+          "id": 5,
+          "type": "barchart",
+          "title": "Monthly AWS Cost Breakdown by Service (Staging vs. Production)",
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 12,
+            "h": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (environment, service) (carelink_infracost_baseline_monthly_usd)",
+              "legendFormat": "{{environment}} - {{service}}",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2
+            }
+          }
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Live Cluster Monthly Run-Rate Trend (Reacts to EC2 Node Scaling)",
+          "gridPos": {
+            "x": 12,
+            "y": 5,
+            "w": 12,
+            "h": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"}))",
+              "legendFormat": "Live $env Monthly Run-Rate",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(carelink_infracost_baseline_monthly_usd{environment=\"production\"})",
+              "legendFormat": "Production HA Baseline",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2
+            }
+          }
+        }
+      ]
+    }

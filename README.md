@@ -7,7 +7,7 @@ Terraform, pipelines and documentation for CareLink Health (capstone Use Case B)
 - Two environments, each with its own VPC over three AZs, EKS cluster, RDS MySQL database and ALB. Production runs one NAT gateway per AZ and Multi-AZ MySQL; staging is a cost-reduced copy.
 - GitHub Actions applies this repo with Terraform using short-lived OIDC credentials (no stored keys). Production changes need the DevOps owner's approval.
 - Argo CD in each cluster deploys the app from the app repo's `env/<environment>` branch (GitOps).
-- Staging runs a monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager to Discord) deployed by Argo CD from `observability/`; both environments have CloudWatch alarms.
+- Both environments run a monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager to Discord) deployed by Argo CD from `observability/`, plus CloudWatch alarms. Grafana also shows each environment's monthly AWS run-rate from Infracost ([ADR 0009](docs/adr/0009-hybrid-finops-cost-observability.md)), and every infrastructure pull request gets an Infracost cost comment.
 - Architecture and diagram: [docs/architecture.md](docs/architecture.md). Evidence for each hard constraint: [docs/compliance-mapping.md](docs/compliance-mapping.md). Decisions: [docs/adr/](docs/adr/). SLOs and runbooks: [docs/sre/](docs/sre/).
 
 ## Repository layout
@@ -17,7 +17,9 @@ Terraform, pipelines and documentation for CareLink Health (capstone Use Case B)
   ci.yaml                       PR checks: fmt/validate, Snyk IaC, plans for staging and production
   cd.yaml                       main: Snyk, apply staging, approval, apply production
   observability-validate.yaml   Prometheus alert rules (promtool) and Grafana dashboards
+  infracost.yaml                PR cost comment (Infracost) and FinOps metrics drift check
   sre-health-check.yaml         scheduled check of CloudWatch alarms and log groups
+infracost.yml                   Infracost projects: infra/ priced for staging and production
 oicd-bootstrap/main.tf          one-time setup, applied locally: OIDC roles, state bucket, ACM
                                 certificates, GitHub environments, variables and rulesets
 infra/                          the platform, applied by the pipelines per environment
@@ -26,15 +28,18 @@ infra/                          the platform, applied by the pipelines per envir
   kms.tf ecr.tf                 customer-managed keys, image repositories
   lbc.tf dns.tf ebs-csi.tf      load balancer controller, external-dns, EBS CSI driver and the
                                 encrypted default storage class
-  argocd.tf                     Argo CD and its Applications (the app, and staging monitoring)
+  argocd.tf                     Argo CD and its Applications (the app, and the monitoring root app)
   monitoring*.tf observability-*.tf alerts-discord.tf lambda/
                                 CloudWatch alarms and dashboard, SNS, Discord bridge, AWS side of
                                 the monitoring stack (Loki bucket, Grafana and Discord secrets)
   policies/                     IAM policy documents (load balancer controller)
   charts/manifests/             small local Helm chart for plain Kubernetes objects
-observability/                  staging monitoring stack, deployed by Argo CD
+observability/                  monitoring stack for both environments, deployed by Argo CD
+                                (argocd/ staging, argocd-production/ production, finops/ cost
+                                exporter and dashboard)
 scripts/                        recovery after the nightly cleanup: recover-state.sh,
-                                generate-imports.sh, clean-wipe-leftovers.sh
+                                generate-imports.sh, clean-wipe-leftovers.sh; FinOps:
+                                export-infracost-metrics.py (regenerates the cost metrics)
 docs/                           architecture, compliance mapping, ADRs, SLOs and runbooks
 ```
 
@@ -45,6 +50,7 @@ docs/                           architecture, compliance mapping, ADRs, SLOs and
 | `ci.yaml` | Pull request to `main`; pushes to `feature/**` | `terraform fmt` and `validate`, Snyk IaC scan (fails on high), then a plan for staging and for production (the production plan waits for approval). Each plan first runs `scripts/recover-state.sh`. |
 | `cd.yaml` | Push to `main`, or manual | Snyk check, apply to staging, then apply to production after the `production` environment approval. |
 | `observability-validate.yaml` | Pull requests and pushes to `main` that change alert rules or dashboards under `observability/` | Prometheus rules with `promtool`, Grafana dashboard JSON. |
+| `infracost.yaml` | Pull requests to `main` that change `infra/`, `infracost.yml` or the FinOps files | Posts one PR comment with the monthly cost of staging and production and what the change adds or removes, and warns if the FinOps metrics in `observability/finops/` no longer match the Terraform. Informational, not a required check; needs the `INFRACOST_CLI_AUTHENTICATION_TOKEN` repository secret. |
 | `sre-health-check.yaml` | Every 6 hours, or manual | Lists CloudWatch alarms in ALARM and recent log groups. It runs in the production environment, so each run waits for approval. |
 
 ## Security model
@@ -80,7 +86,7 @@ terraform init
 GITHUB_TOKEN=$(gh auth token) terraform apply
 ```
 
-It creates the OIDC provider, the two pipeline roles and their trust policies, the state bucket and its policy, the DNS-validated ACM certificates, the GitHub environments (with the production approval), the variables the workflows read (`AWS_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`), the rulesets for `main`, and the `env/production` lock (deploy key, ruleset, main-only production environment). The Snyk token is a repository secret (`SNYK_TOKEN`).
+It creates the OIDC provider, the two pipeline roles and their trust policies, the state bucket and its policy, the DNS-validated ACM certificates, the GitHub environments (with the production approval), the variables the workflows read (`AWS_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`), the rulesets for `main`, and the `env/production` lock (deploy key, ruleset, main-only production environment). The Snyk token (`SNYK_TOKEN`) and the Infracost service-account token (`INFRACOST_CLI_AUTHENTICATION_TOKEN`) are repository secrets, set by hand with `gh secret set`.
 
 The deploy key's private half is not in Terraform: it was generated locally and stored once with `gh secret set ENV_PRODUCTION_DEPLOY_KEY --env production --repo <owner>/capstone-carelink-app`, then deleted, so it is in neither Git nor the bootstrap state. To rotate it, generate a new pair, replace `oicd-bootstrap/keys/app-env-production-deploy-key.pub`, set the secret again and apply.
 
