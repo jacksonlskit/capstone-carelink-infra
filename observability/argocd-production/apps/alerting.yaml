@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/jacksonlskit/capstone-carelink-infra.git
     targetRevision: main
-    path: observability/alerting
+    path: observability/alerting/production
     directory:
       recurse: true
 

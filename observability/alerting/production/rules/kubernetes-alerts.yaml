@@ -1,0 +1,132 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: carelink-kubernetes-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: carelink.kubernetes.nodes
+      rules:
+        - alert: KubernetesNodeNotReady
+          expr: |
+            kube_node_status_condition{
+              condition="Ready",
+              status="true"
+            } == 0
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "Kubernetes node is not ready"
+            description: "Node {{ $labels.node }} has not been Ready for 5 minutes."
+
+        - alert: KubernetesNodeMemoryPressure
+          expr: |
+            kube_node_status_condition{
+              condition="MemoryPressure",
+              status="true"
+            } == 1
+          for: 5m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Kubernetes node has memory pressure"
+            description: "Node {{ $labels.node }} is reporting memory pressure."
+
+        - alert: KubernetesNodeDiskPressure
+          expr: |
+            kube_node_status_condition{
+              condition="DiskPressure",
+              status="true"
+            } == 1
+          for: 5m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Kubernetes node has disk pressure"
+            description: "Node {{ $labels.node }} is reporting disk pressure."
+
+    - name: carelink.kubernetes.pods
+      rules:
+        - alert: KubernetesPodCrashLooping
+          expr: |
+            max_over_time(
+              kube_pod_container_status_waiting_reason{
+                reason="CrashLoopBackOff"
+              }[5m]
+            ) > 0
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "Pod is crash looping"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} (namespace {{ $labels.namespace }}) is repeatedly restarting."
+
+        - alert: KubernetesPodNotReady
+          expr: |
+            kube_pod_status_ready{
+              condition="true",
+              namespace!=""
+            } == 0
+          for: 10m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Kubernetes pod is not ready"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has not been Ready for 10 minutes."
+
+        - alert: KubernetesDeploymentReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_available
+            <
+            kube_deployment_spec_replicas
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "Deployment has unavailable replicas"
+            description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has fewer available replicas than desired."
+
+    - name: carelink.kubernetes.storage
+      rules:
+        - alert: KubernetesPersistentVolumeClaimPending
+          expr: |
+            kube_persistentvolumeclaim_status_phase{
+              phase="Pending"
+            } == 1
+          for: 10m
+          labels:
+            severity: page
+          annotations:
+            summary: "Persistent volume claim is pending"
+            description: "PVC {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} has remained Pending for 10 minutes."
+
+        - alert: KubernetesPersistentVolumeLowSpace
+          expr: |
+            (
+              kubelet_volume_stats_available_bytes
+              /
+              kubelet_volume_stats_capacity_bytes
+            ) < 0.15
+            and
+            kubelet_volume_stats_capacity_bytes > 0
+          for: 10m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Persistent volume has less than 15% free space"
+            description: "Volume {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} is running low on available storage."
+
+    - name: carelink.kubernetes.disruption-budgets
+      rules:
+        - alert: KubernetesPodDisruptionBudgetAtRisk
+          expr: |
+            kube_poddisruptionbudget_status_pod_disruptions_allowed == 0
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Pod disruption budget has no allowed disruptions"
+            description: "PDB {{ $labels.poddisruptionbudget }} in namespace {{ $labels.namespace }} has no allowed voluntary disruptions for 15 minutes."
