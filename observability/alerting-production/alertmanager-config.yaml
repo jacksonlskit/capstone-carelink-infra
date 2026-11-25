@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: carelink-discord
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+
+spec:
+  route:
+    receiver: discord
+    groupBy:
+      - alertname
+      - namespace
+      - service
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    matchers:
+      - name: severity
+        value: info|none
+        matchType: "!~"
+    routes:
+      - matchers:
+          - name: environment
+            value: production
+            matchType: "="
+        receiver: discord
+
+  receivers:
+    - name: discord
+      discordConfigs:
+        - apiURL:
+            name: discord-webhook
+            key: webhook-url
+          sendResolved: true
+          title: '{{ if eq .Status "firing" }}🚨 [PRODUCTION ALERT]{{ else }}✅ [PRODUCTION RESOLVED]{{ end }} {{ .CommonLabels.alertname }}'
+          message: |
+            {{ range .Alerts }}
+            **Environment:** PRODUCTION
+            **Alert:** {{ .Labels.alertname }}
+            **Severity:** {{ .Labels.severity }}
+            **Summary:** {{ .Annotations.summary }}
+            **Action / Details:** {{ .Annotations.description }}
+            {{ end }}

@@ -37,34 +37,3 @@ spec:
           annotations:
             summary: "CareLink staging external health probe failed"
             description: "The external CareLink staging health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
-
-    - name: carelink.production.services
-      rules:
-        - alert: CareLinkProductionServiceReplicaRedundancyLost
-          expr: |
-            kube_deployment_status_replicas_available{
-              namespace="production",
-              deployment=~"api-gateway|customers-service|vets-service|visits-service"
-            } < 2
-          for: 5m
-          labels:
-            severity: page
-            environment: production
-          annotations:
-            summary: "CareLink production service has fewer than two available replicas"
-            description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has fewer than two available replicas for 5 minutes. Investigate pod health, scheduling and node capacity."
-
-        - alert: CareLinkProductionHealthProbeFailed
-          expr: |
-            probe_success{
-              environment="production",
-              service="carelink"
-            } == 0
-          for: 2m
-          labels:
-            severity: page
-            environment: production
-            service: carelink
-          annotations:
-            summary: "CareLink production external health probe failed"
-            description: "The external CareLink production health endpoint has failed consecutive probes for 2 minutes. Check the ALB, ingress and API Gateway."
