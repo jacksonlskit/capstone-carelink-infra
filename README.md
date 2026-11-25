@@ -75,6 +75,7 @@ docs/                           architecture, compliance mapping, ADRs, SLOs and
 - **Production deploy branch:** Argo CD deploys whatever is on the app repository's `env/production`, so a ruleset lets only one deploy key write it. GitHub gives that key (the production environment secret `ENV_PRODUCTION_DEPLOY_KEY`) only to the production job, after the approval, for runs from `main`. Nobody can push there directly.
 - **Cluster access:** per environment in `infra/variables.tf` (`cluster_access`). In production only the DevOps owner is cluster admin; the rest of the team is view-only, plus `kubectl port-forward` in the `monitoring` namespace so they can open Grafana (Role `monitoring-portforward`, `infra/eks.tf`).
 - **Known limits** ([ADR 0006](docs/adr/0006-environment-isolation.md)): both pipeline roles have AdministratorAccess in the shared cohort account, and `env/staging` is not locked (staging has no approval step).
+- **Argo CD UI** ([ADR 0010](docs/adr/0010-argocd-github-sso.md)): `https://carelink-<env>-argocd.sctp-sandbox.com`, GitHub sign-in for members of the `carelink-group03` organization, no local admin. In production only the DevOps owner is admin; the rest of the team is read-only. Staging first; production follows. Runbook: [docs/sre/runbooks/argocd-sso.md](docs/sre/runbooks/argocd-sso.md).
 
 ## Bootstrap
 
