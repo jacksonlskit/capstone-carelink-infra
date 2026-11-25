@@ -71,7 +71,8 @@ data "aws_iam_policy_document" "external_secrets" {
     resources = [
       local.app_db.master_user_secret[0].secret_arn,
       aws_secretsmanager_secret.alertmanager_discord_webhook.arn,
-      aws_secretsmanager_secret.grafana_admin.arn, # observability-grafana.tf
+      aws_secretsmanager_secret.grafana_admin.arn,       # observability-grafana.tf
+      aws_secretsmanager_secret.argocd_github_oauth.arn, # argocd.tf (Argo CD GitHub sign-in)
     ]
   }
 

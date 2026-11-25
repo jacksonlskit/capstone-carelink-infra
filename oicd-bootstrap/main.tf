@@ -577,6 +577,128 @@ resource "aws_acm_certificate_validation" "app" {
   validation_record_fqdns = [aws_route53_record.app_cert_validation[each.key].fqdn]
 }
 
+# The Argo CD UI has its own hostname and ALB per environment (infra/argocd.tf,
+# ADR 0010), found by hostname in the same way.
+locals {
+  argocd_hostnames = {
+    staging    = "carelink-staging-argocd.${local.app_dns_zone}"
+    production = "carelink-production-argocd.${local.app_dns_zone}"
+  }
+}
+
+resource "aws_acm_certificate" "argocd" {
+  for_each = local.argocd_hostnames
+
+  domain_name       = each.value
+  validation_method = "DNS"
+  key_algorithm     = "RSA_2048"
+
+  # Project comes from the provider's default_tags; setting it here would override it.
+  tags = {
+    Environment = each.key
+    ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "argocd_cert_validation" {
+  for_each = aws_acm_certificate.argocd
+
+  zone_id         = data.aws_route53_zone.sandbox.zone_id
+  name            = one(each.value.domain_validation_options).resource_record_name
+  type            = one(each.value.domain_validation_options).resource_record_type
+  records         = [one(each.value.domain_validation_options).resource_record_value]
+  ttl             = 300
+  allow_overwrite = true
+}
+
+resource "aws_acm_certificate_validation" "argocd" {
+  for_each = aws_acm_certificate.argocd
+
+  certificate_arn         = each.value.arn
+  validation_record_fqdns = [aws_route53_record.argocd_cert_validation[each.key].fqdn]
+}
+
+# -----------------------------------------------------------------------------
+# GITHUB ORGANIZATION: WHO MAY SIGN IN TO ARGO CD
+# -----------------------------------------------------------------------------
+# The repositories stay under the personal account. The free organization only
+# decides who may sign in to the Argo CD UI (GitHub sign-in through Dex,
+# infra/argocd.tf, ADR 0010). Its teams reach Argo CD as the groups
+# "<org>:<team>", which infra/argocd.tf maps to a role per environment
+# (argocd_team_roles). Membership is code here, so it changes through a
+# reviewed pull request, like cluster_access for kubectl.
+#
+# The organization itself and its two OAuth Apps (one per environment) were
+# created by hand: GitHub has no API for either. Applying this needs a GitHub
+# token with the admin:org scope (gh auth refresh -s admin:org). New members get
+# an e-mail invitation and can only sign in after accepting it.
+# Runbook: docs/sre/runbooks/argocd-sso.md
+
+provider "github" {
+  alias = "org"
+  owner = local.github_org
+}
+
+locals {
+  github_org = "carelink-group03"
+
+  # GitHub login => teams. The org owner (github_owner) created the organization
+  # and is not managed by github_membership below, so a mistake here can never
+  # remove or demote the only owner.
+  #   devops: Argo CD admin in every environment
+  #   team:   Argo CD admin in staging, read-only in production
+  org_team_members = {
+    (local.github_owner) = ["devops", "team"]
+    "KreatifJon"         = ["team"]
+    "shil5ram"           = ["team"]
+    "Krishnaveni-CE13"   = ["team"]
+  }
+
+  org_teams = {
+    devops = "DevOps owner: Argo CD admin in every environment"
+    team   = "CareLink team: Argo CD admin in staging, read-only in production"
+  }
+}
+
+resource "github_membership" "org" {
+  provider = github.org
+  for_each = { for login, teams in local.org_team_members : login => teams if login != local.github_owner }
+
+  username = each.key
+  role     = "member"
+}
+
+resource "github_team" "org" {
+  provider = github.org
+  for_each = local.org_teams
+
+  name        = each.key
+  description = each.value
+  privacy     = "closed"
+}
+
+# Authoritative: anyone added to a team by hand is removed on the next apply.
+resource "github_team_members" "org" {
+  provider = github.org
+  for_each = github_team.org
+
+  team_id = each.value.id
+
+  dynamic "members" {
+    for_each = toset([for login, teams in local.org_team_members : login if contains(teams, each.key)])
+    content {
+      username = members.value
+      role     = "member"
+    }
+  }
+
+  depends_on = [github_membership.org]
+}
+
 
 # -----------------------------------------------------------------------------
 # OUTPUTS
@@ -600,4 +722,9 @@ output "production_role_arn" {
 output "app_certificate_arns" {
   description = "ACM certificate ARNs per environment for the app ALB (found by hostname by the Load Balancer Controller)"
   value       = { for env, v in aws_acm_certificate_validation.app : env => v.certificate_arn }
+}
+
+output "argocd_certificate_arns" {
+  description = "ACM certificate ARNs per environment for the Argo CD ALB (found by hostname by the Load Balancer Controller)"
+  value       = { for env, v in aws_acm_certificate_validation.argocd : env => v.certificate_arn }
 }
