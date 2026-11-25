@@ -135,7 +135,9 @@ variable "cluster_access" {
     Who may use kubectl on each environment's cluster, by IAM user name (the
     cohort's users live under the path user/students/ce13/; the ARNs are built in
     eks.tf from the current account). admins get AmazonEKSClusterAdminPolicy,
-    viewers get AmazonEKSViewPolicy (read most objects, never Secrets).
+    viewers get AmazonEKSViewPolicy (read most objects, never Secrets) plus
+    kubectl port-forward in the monitoring namespace only, to open Grafana
+    (helm_release.monitoring_access in eks.tf).
     Production admin is deliberately limited to the DevOps owner, so production
     access only changes through a reviewed pull request. The pipeline roles get
     admin separately, as the cluster creator (eks.tf, access_config).
