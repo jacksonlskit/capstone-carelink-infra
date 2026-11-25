@@ -682,17 +682,21 @@ resource "github_team" "org" {
 }
 
 # Authoritative: anyone added to a team by hand is removed on the next apply.
+# Members who have not accepted their invitation yet are not reported by
+# GitHub, so until they accept, each apply shows them as "to add" (harmless).
 resource "github_team_members" "org" {
   provider = github.org
   for_each = github_team.org
 
-  team_id = each.value.id
+  team_slug = each.value.slug
 
   dynamic "members" {
     for_each = toset([for login, teams in local.org_team_members : login if contains(teams, each.key)])
     content {
       username = members.value
-      role     = "member"
+      # GitHub makes the owner who created a team its maintainer; matching that
+      # keeps the plan clean instead of demoting the owner on every apply.
+      role = members.value == local.github_owner ? "maintainer" : "member"
     }
   }
 

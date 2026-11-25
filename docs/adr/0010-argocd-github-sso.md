@@ -1,6 +1,6 @@
 # ADR 0010: Argo CD UI with GitHub sign-in
 
-- **Status:** Accepted (staging first, production in a follow-up pull request)
+- **Status:** Accepted. Staging live and sign-in verified on 25 Nov 2026; production switched on by the follow-up pull request
 - **Date:** 2026-11-25
 - **Owner:** DevSecOps Engineer
 - **Replaces:** the "UI not exposed publicly (port-forward only)" consequence of ADR 0008
