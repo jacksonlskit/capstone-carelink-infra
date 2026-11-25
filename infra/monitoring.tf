@@ -159,15 +159,21 @@ locals {
 }
 
 # -----------------------------------------------------------------------------
-# ALB created by the AWS Load Balancer Controller from the Ingress (not managed
-# by Terraform), found by the tag the controller sets. The controller is NOT
-# installed yet, so monitor_alb defaults to false.
+# The app's ALB, created by the AWS Load Balancer Controller from the app's
+# Ingress (not managed by Terraform), found by the tags the controller sets.
+# The cluster tag alone is not enough: the controller puts it on every ALB of
+# the cluster, and the Argo CD UI has its own ALB (argocd.tf). The stack tag
+# names the Ingress: <namespace>/<name>, and the app chart's Ingress is always
+# "carelink-alb-ingress" in the environment's namespace.
 # -----------------------------------------------------------------------------
 data "aws_lb" "app" {
   count = var.monitor_alb ? 1 : 0
 
   name = var.alb_name != "" ? var.alb_name : null
-  tags = var.alb_name != "" ? null : { "elbv2.k8s.aws/cluster" = local.cluster_name }
+  tags = var.alb_name != "" ? null : {
+    "elbv2.k8s.aws/cluster" = local.cluster_name
+    "ingress.k8s.aws/stack" = "${var.environment}/carelink-alb-ingress"
+  }
 }
 
 # -----------------------------------------------------------------------------
