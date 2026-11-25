@@ -60,7 +60,7 @@ jobs:
       TF_VAR_discord_alerts_enabled: "true"
       # SLO alarms (availability burn, p95 latency). Staging first; production after they survive a cleanup cycle.
       TF_VAR_monitor_alb: "true"
-      # Argo CD UI on its own ALB with GitHub sign-in (argocd.tf, ADR 0010). Staging first; production in a follow-up PR.
+      # Argo CD UI on its own ALB with GitHub sign-in (argocd.tf, ADR 0010). Team admin in staging.
       TF_VAR_argocd_sso_enabled: "true"
 
     steps:
@@ -118,6 +118,8 @@ jobs:
       TF_VAR_discord_alerts_enabled: "true"
       # SLO alarms (availability burn, p95 latency). Enabled in production after running cleanly in staging.
       TF_VAR_monitor_alb: "true"
+      # Argo CD UI on its own ALB with GitHub sign-in (argocd.tf, ADR 0010). Team read-only in production.
+      TF_VAR_argocd_sso_enabled: "true"
 
     steps:
       - name: Checkout Code

@@ -7,7 +7,7 @@ spec:
   project: observability
 
   source:
-    repoURL: https://github.com
+    repoURL: https://github.com/jacksonlskit/capstone-carelink-infra.git
     targetRevision: main
     path: observability/dashboards
     directory:
@@ -15,7 +15,7 @@ spec:
       include: "*.yaml"
 
   destination:
-    server: https://default.svc
+    server: https://kubernetes.default.svc
     namespace: monitoring
 
   syncPolicy:

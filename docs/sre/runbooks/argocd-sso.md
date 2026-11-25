@@ -9,7 +9,7 @@ Design and reasons: [ADR 0010](../../adr/0010-argocd-github-sso.md). Code: `infr
 | URL | `https://carelink-<env>-argocd.sctp-sandbox.com` |
 | Who may sign in | Members of the GitHub organization `carelink-group03`, managed as code in `oicd-bootstrap/main.tf` (`org_team_members`) |
 | Roles | `argocd_team_roles` in `infra/argocd.tf`: team `devops` is admin everywhere; team `team` is admin in staging and **read-only** in production |
-| OAuth App (one per environment) | Organization settings → Developer settings → OAuth Apps, created by hand. Callback URL `https://carelink-<env>-argocd.sctp-sandbox.com/api/dex/callback` |
+| OAuth App (one per environment) | Created by hand **from the organization's page**: `github.com/organizations/carelink-group03/settings/applications` (not your personal Developer settings, see the troubleshooting row on org data). Callback URL `https://carelink-<env>-argocd.sctp-sandbox.com/api/dex/callback` |
 | Client ID and secret | Secrets Manager `carelink-<env>-argocd-github-oauth` (`{"clientID": "...", "clientSecret": "..."}`), created empty by Terraform, value stored by a person with `scripts/set-argocd-oauth-secret.sh` |
 | Copy in the cluster | Kubernetes Secret `argocd-dex-github` (namespace `argocd`), made by External Secrets every 5 minutes |
 | TLS certificate | ACM, `oicd-bootstrap/main.tf` (`aws_acm_certificate.argocd`) |
@@ -83,5 +83,6 @@ Common causes:
 |---|---|
 | "Log in via GitHub" missing or erroring | `kubectl -n argocd logs deploy/argocd-dex-server`; is the ExternalSecret `SecretSynced`? Does the Secret carry the label `app.kubernetes.io/part-of: argocd`? |
 | GitHub says "redirect_uri is not associated with this application" | The OAuth App's callback URL must be exactly `https://carelink-<env>-argocd.sctp-sandbox.com/api/dex/callback` |
+| Sign-in fails; the Dex log says `user not in org or application not authorized to read org data` | The organization blocks OAuth Apps it has not approved (on by default for new organizations), so GitHub hides the membership even from the owner. Seen on staging on 25 Nov and fixed this way. An organization owner opens `https://github.com/settings/connections/applications/<client ID>` and clicks **Grant** next to `carelink-group03`; that approves the app for every member. Apps created from the organization's own page are approved automatically |
 | Signed in, but no apps visible | **User Info** groups: the person is not (yet) in a team listed in `argocd_team_roles`, or has not accepted the invitation |
 | No ALB, or the Ingress shows a certificate error | `kubectl -n argocd describe ingress argocd-server` events; the certificate comes from the bootstrap apply (step 1) |
