@@ -69,11 +69,15 @@ resource "aws_eks_cluster" "main" {
 # Per environment (var.cluster_access): in production only the DevOps owner is
 # cluster admin; the rest of the team can look (pods, logs, events) but cannot
 # change anything or read Secrets. Changes reach production through Git and
-# Argo CD, not kubectl.
+# Argo CD, not kubectl. One exception: viewers may port-forward to the
+# monitoring namespace (helm_release.monitoring_access below) to open Grafana.
 locals {
   team_user_arn_prefix = "arn:aws:iam::${local.account_id}:user/students/ce13/"
   cluster_admin_arns   = [for user in var.cluster_access[var.environment].admins : "${local.team_user_arn_prefix}${user}"]
   cluster_viewer_arns  = [for user in var.cluster_access[var.environment].viewers : "${local.team_user_arn_prefix}${user}"]
+
+  # Kubernetes group that the monitoring port-forward Role is bound to.
+  monitoring_portforward_group = "carelink-monitoring-portforward"
 }
 
 resource "aws_eks_access_entry" "team" {
@@ -81,6 +85,9 @@ resource "aws_eks_access_entry" "team" {
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
   type          = "STANDARD"
+
+  # Viewers also join the port-forward group; admins can do that already.
+  kubernetes_groups = contains(local.cluster_viewer_arns, each.value) ? [local.monitoring_portforward_group] : []
 }
 
 # The entries used to be called team_admins; same objects, so Terraform keeps
@@ -112,6 +119,69 @@ resource "aws_eks_access_policy_association" "team_viewers" {
   access_scope {
     type = "cluster"
   }
+
+  depends_on = [aws_eks_access_entry.team]
+}
+
+# AmazonEKSViewPolicy does not allow kubectl port-forward: that creates a
+# pods/portforward subresource, which only edit and admin allow. This Role adds
+# exactly that, only in the monitoring namespace, so viewers can open Grafana
+# (and Prometheus, Alertmanager, Loki: RBAC cannot narrow it to one Deployment's
+# pods, whose names change on every rollout). Still no exec, no Secrets, no
+# changes, and no port-forward to the app namespace. Kubernetes allows a request
+# when either the access policy or this RBAC binding allows it.
+# Only created where there are viewers (production); defined here rather than in
+# observability/ so changing it needs the production approval, and a rebuild
+# from empty state imports it as a Helm release (scripts/generate-imports.sh).
+resource "helm_release" "monitoring_access" {
+  count = length(local.cluster_viewer_arns) > 0 ? 1 : 0
+
+  name             = "monitoring-access"
+  namespace        = "monitoring"
+  create_namespace = true
+  chart            = "${path.module}/charts/manifests"
+
+  values = [yamlencode({
+    resources = [
+      {
+        apiVersion = "rbac.authorization.k8s.io/v1"
+        kind       = "Role"
+        metadata = {
+          name      = "monitoring-portforward"
+          namespace = "monitoring"
+        }
+        rules = [
+          {
+            apiGroups = [""]
+            resources = ["pods/portforward"]
+            # create: SPDY port-forward (POST). get + create: websocket
+            # port-forward (GET), which newer API servers also check as create.
+            verbs = ["get", "create"]
+          }
+        ]
+      },
+      {
+        apiVersion = "rbac.authorization.k8s.io/v1"
+        kind       = "RoleBinding"
+        metadata = {
+          name      = "monitoring-portforward"
+          namespace = "monitoring"
+        }
+        roleRef = {
+          apiGroup = "rbac.authorization.k8s.io"
+          kind     = "Role"
+          name     = "monitoring-portforward"
+        }
+        subjects = [
+          {
+            apiGroup = "rbac.authorization.k8s.io"
+            kind     = "Group"
+            name     = local.monitoring_portforward_group
+          }
+        ]
+      }
+    ]
+  })]
 
   depends_on = [aws_eks_access_entry.team]
 }

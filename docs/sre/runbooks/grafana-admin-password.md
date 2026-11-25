@@ -57,10 +57,16 @@ aws eks update-kubeconfig --name carelink-staging-eks --region us-east-1
    ```
    A number above `0` means Grafana's brute-force protection has locked the `admin` user. Between steps 3 and 4 the sidecars tried the new password 5 times while the database still held the old one, and 5 failed logins within 5 minutes lock the user. The lock lifts 5 minutes after the 5th failure, and until then even the correct password gets `401`. Wait 5 minutes and run step 5 again. Don't reset the password again (it changes nothing) and don't turn the protection off. Seen on staging on 15 Nov 2026: failures at 08:46:27, `LOGIN OK` at 08:51:42.
 
-To sign in from a laptop: `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`, open http://localhost:3000, user `admin`. Read the password only when needed, and don't paste it anywhere:
+To sign in from a laptop: `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`, open http://localhost:3000, user `admin`. This works for the whole team in both environments: in production the view-only users may port-forward in the `monitoring` namespace only (Role `monitoring-portforward`, `infra/eks.tf`). Read the password only when needed, and don't paste it anywhere:
 
 ```bash
 kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+View-only users can't read Kubernetes Secrets in production, so read it from Secrets Manager instead (`<env>` is `staging` or `production`):
+
+```bash
+aws secretsmanager get-secret-value --secret-id carelink-<env>-grafana-admin --query SecretString --output text | python3 -c 'import json,sys; print(json.load(sys.stdin)["admin-password"])'
 ```
 
 ## Rotate the password
