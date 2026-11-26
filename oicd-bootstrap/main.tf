@@ -693,7 +693,9 @@ resource "github_team_members" "org" {
   dynamic "members" {
     for_each = toset([for login, teams in local.org_team_members : login if contains(teams, each.key)])
     content {
-      username = members.value
+      # GitHub reports logins in lowercase; without lower() every plan would
+      # remove and re-add anyone whose login has capitals (KreatifJon).
+      username = lower(members.value)
       # GitHub makes the owner who created a team its maintainer; matching that
       # keeps the plan clean instead of demoting the owner on every apply.
       role = members.value == local.github_owner ? "maintainer" : "member"
