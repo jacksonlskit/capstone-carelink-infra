@@ -49,5 +49,6 @@ echo "Stored a new version of ${secret_id} (${version})."
 if [[ $app == argocd ]]; then
   echo "External Secrets copies it into argocd/argocd-dex-github within 5 minutes (runbook step 3 forces it now)."
 else
-  echo "External Secrets copies it into monitoring/grafana-github-oauth within 5 minutes; Reloader then restarts Grafana."
+  echo "External Secrets copies it into monitoring/grafana-github-oauth within 5 minutes."
+  echo "First time: restart Grafana once (runbook grafana-sso.md, step 5); after a rotation Reloader restarts it."
 fi

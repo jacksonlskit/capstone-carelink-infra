@@ -1,8 +1,8 @@
-# ADR 0009: Hybrid FinOps cost observability with Infracost, Prometheus, and Grafana
+# ADR 0009: Cost visibility: Infracost estimates plus live node count in Grafana
 
-- **Status:** Accepted
-- **Date:** 2026-11-22 (updated 2026-11-23: generator in the repository, cost check in CI, hardened exporter, MySQL cost driver, what is not included)
-- **Owner:** DevSecOps Engineer
+**Status:** Accepted
+
+**Date:** 2026-11-23
 
 ## Context
 CareLink operates isolated `staging` and `production` environments on AWS (`us-east-1`) spanning EKS, RDS MySQL, RDS PostgreSQL, VPC NAT Gateways, KMS, Secrets Manager, and CloudWatch. Engineering and operations teams need continuous monthly run-rate visibility inside Grafana to compare environment HA trade-offs and spot unused resources across nightly teardown and rebuild cycles.
@@ -12,7 +12,32 @@ Three constraints shaped the design:
 - **Off-cluster managed services:** Roughly 70% of CareLink's AWS spend sits outside EKS worker nodes (managed RDS instances, EKS control planes, and NAT Gateways), so pod-only Kubernetes cost tools underreport total environment spend.
 - **Dynamic worker scaling:** EKS worker node counts change during load tests or right-sizing, causing static cost spreadsheets to drift.
 
+## Options Considered
+**1. Hybrid: Infracost prices the Terraform, Prometheus adds the live node count (Grafana)**
+- For:
+  - Works without billing permissions.
+  - Covers the off-cluster costs (RDS, NAT, EKS control plane) that make up most of the spend.
+  - Follows node scaling within 30 seconds.
+  - Every infrastructure pull request shows its cost change.
+- Against:
+  - An estimate, not the bill: usage-based charges and resources created outside Terraform (the ALBs) are missing.
+  - The metrics must be regenerated when priced resources change.
+
+**2. AWS Cost Explorer / Cost and Usage Report exporters**
+- For: real billed cost.
+- Against: blocked by the shared account's IAM policy (`ce:*` denied), and up to 24 hours of billing lag.
+
+**3. Kubernetes-only cost tools (e.g. OpenCost)**
+- For: detailed per-pod allocation.
+- Against: covers only in-cluster nodes and pods, and misses RDS, NAT Gateways and the EKS control plane.
+
+**4. A static cost spreadsheet**
+- For: simple.
+- Against: goes stale whenever nodes or resources change, and lives outside the dashboards.
+
 ## Decision
+Option 1:
+
 - **Hybrid Infracost + Prometheus model:** The generator `scripts/export-infracost-metrics.py` runs `infracost scan` (Infracost CLI v2.20.0) on the projects in `infracost.yml` (`carelink-staging` and `carelink-production`: the same `infra/` priced once per environment) and writes only `observability/finops/01-infracost-metrics-cm.yaml`. It separates fixed off-cluster AWS baseline costs from per-node EC2 compute (**$34.37/mo per worker node** = the node group's price divided by `desired_size` in `infra/eks.tf`, so the unit price follows the code).
 - **Live PromQL run-rate calculation:** Grafana combines fixed IaC baseline metrics with live Kubernetes node telemetry (`count(kube_node_info)`), reacting within 30 seconds whenever worker nodes scale:
 
@@ -52,11 +77,6 @@ Infracost prices what the Terraform declares, so these are missing from the tota
 | NAT data processing, CloudWatch Logs, data transfer | usage-based | usage-based | Depend on traffic; not estimated |
 
 So the real run-rate is roughly $35/mo (staging) and $42/mo (production) above the dashboard before usage-based charges.
-
-## Alternatives considered
-- **AWS Cost Explorer / CUR Prometheus exporters:** Blocked by shared account `ce:*` IAM restrictions and introduces up to a 24-hour billing lag.
-- **Kubernetes-only cost tools (e.g., OpenCost):** Covers in-cluster pod/node allocation only, omitting off-cluster RDS, NAT Gateways, and EKS control plane costs.
-- **Static documentation:** Requires manual edits whenever worker node counts change and lives outside operational dashboards.
 
 ## Consequences
 - **Zero billing IAM dependency:** Displays the Terraform-managed run-rate of each environment inside Grafana without Cost Explorer permissions (what it leaves out is listed above).

@@ -1,31 +1,51 @@
 # ADR 0006: Staging and production isolation
 
-- **Status:** Accepted, Option B, partly implemented (22 Nov 2026, see "Implementation status" below). Option A stays the upgrade path.
-- **Date:** 2026-10-23
-- **Owner:** DevSecOps Engineer with Solutions Architect
+**Status:** Accepted (Option B, implemented in part; Option A is the upgrade path)
+
+**Date:** 2026-11-22
 
 ## Context
-The brief requires different credentials per environment and that staging credentials must not be able to touch production. At the time of review, both environment roles had AdministratorAccess in one AWS account and shared a wildcard trust policy (`repo:<owner>*`), so a staging job could assume the production role and modify production resources or read its state.
+The brief requires different credentials per environment, and staging credentials must not be able to touch production. Both environments run in one shared cohort AWS account, where every cohort member has AdministratorAccess.
+
+At the time of review (October), both pipeline roles had AdministratorAccess and shared a wildcard trust (`repo:<owner>*`). So a staging job could assume the production role, modify production resources or read its state.
+
+## Options Considered
+**1. Option A: separate AWS accounts for staging and production (AWS Organizations)**
+- For: the strongest isolation. The production role exists only in the production account, and a separate production account also keeps cohort members out. This is the answer for a real client engagement.
+- Against: not possible in the course's shared account; needs account setup and a cross-account design for state and pipelines.
+
+**2. Option B: one account, hardened per environment**
+- For:
+  - Doable now and demonstrable.
+  - Exact trust per environment, separate state with write rules, per-environment cluster access, and production deployments locked behind the approval.
+- Against:
+  - Both environments still share one account's quotas and blast radius.
+  - Anyone with AdministratorAccess in the account can still go around it.
+
+**3. Leave it as it was**
+- For: no work.
+- Against: fails the brief, because staging can act on production.
 
 ## Decision
-**Option B (current account, hardened):** four roles (staging apply, production apply, read-only plan, read-only SRE), each trusting only its own GitHub claim; separate state keys per environment (`staging/infra/...`, `production/infra/...`); explicit denies so the staging role cannot read production state or act on resources tagged `Environment=production`; both apply roles are denied edits to the pipeline roles and OIDC provider; a provider `allowed_account_ids` guard-rail per environment.
+Option B now, Option A as the upgrade path.
 
-**Option A (upgrade path):** separate AWS accounts for staging and production under AWS Organizations, with the production role existing only in the production account. This is the strongest isolation and is the answer to give for "how would you do this in a real client engagement".
+**Done**, mostly in `oicd-bootstrap/main.tf`:
+- **One role per environment, exact trust:** each role trusts only its own GitHub environment on the immutable OIDC subject (ADR 0002). Staging jobs cannot assume the production role, jobs without an environment get no AWS access, and production jobs start only after the required reviewer approves. Tested on 21 Nov 2026.
+- **Separate state per environment, enforced by the bucket policy:** only the pipeline roles may write state, and neither can write the other's key. Local applies are refused (ADR 0003).
+- **Reviewed merges on `main` in both repositories:** someone other than the last pusher must approve (`require_last_push_approval`).
+- **Cluster access per environment** (`cluster_access` in `infra/variables.tf`, `infra/eks.tf`):
+  - In production only the DevOps owner and the pipeline role are cluster admins; the rest of the team is view-only and cannot read Secrets.
+  - One exception since 25 Nov: port-forward in the `monitoring` namespace only.
+  - Argo CD and Grafana sign-in follow the same split: in production, the team is read-only in Argo CD and Viewer in Grafana (ADR 0010, ADR 0011).
+- **Only the approved production job can write `env/production`**, the branch Argo CD deploys to production. A ruleset blocks every push except one deploy key, whose private half GitHub releases only to the approved production job on `main`. Live since 22 Nov 2026: a direct push by the repository admin was refused with `GH013`.
+
+**Not done yet** (known gaps):
+- **`env/staging` is not locked:** staging has no approval step to protect.
+- **Both pipeline roles still have AdministratorAccess.** They should be scoped per environment, or the staging role denied on resources tagged `Environment=production`.
+- **No `allowed_account_ids` guard-rail** in the Terraform providers.
 
 ## Consequences
-- Option B is quick to implement and demonstrable (a deliberate cross-environment assume-role attempt fails), but relies on tag-based denies that only cover services supporting resource tags, and both environments still share one account's quotas and blast radius.
-- Option A costs account setup time and cross-account state access design.
-- Evidence for the panel: the trust policy JSON, the failed cross-environment attempt, and the policy documents above.
-
-## Implementation status (22 Nov 2026)
-Done (`oicd-bootstrap/main.tf` unless noted):
-- **One role per environment, each trusting only its own GitHub environment.** The trust policies match GitHub's immutable OIDC subject exactly, with no wildcards: the staging role accepts only `repo:<owner>@<owner id>/<repo>@<repo id>:environment:staging` and the production role only `...:environment:production`, for the infra and app repositories. So staging jobs cannot assume the production role, jobs without an environment get no AWS access, and no other repository can use either role. Production jobs only start after the required reviewer approves. Applied on 21 Nov 2026 and tested with an infra pipeline run in each environment.
-- **Separate state per environment, enforced by the bucket policy:** only the pipeline roles may write state, the staging role cannot write `production/*` and the production role cannot write `staging/*`; local applies are refused.
-- **Reviewed merges on the app repository's main:** someone other than the last pusher must approve (`require_last_push_approval`), as on the infra repository, so code pushed after an approval cannot be merged unreviewed.
-- **Cluster access per environment** (`infra/eks.tf`, `cluster_access` in `infra/variables.tf`): in production only the DevOps owner (plus the pipeline role, as cluster creator) is cluster admin; the other team members are view-only and cannot read Secrets. One exception, added 25 Nov 2026 so the SRE team can open production Grafana: viewers are in the Kubernetes group `carelink-monitoring-portforward`, bound to a Role that allows only `pods/portforward` in the `monitoring` namespace (no exec, no Secrets, no changes, and nothing in the app namespace). RBAC cannot limit port-forward to Grafana alone, because its pod name changes on every rollout, so viewers can also reach Prometheus, Loki and Alertmanager, where they could create silences; they already have the same power through Grafana's shared `admin` login. The Role lives in Terraform, not in `observability/`, so changing it needs the production approval. Staging keeps the whole team as admins. Because the list is code, production access only changes through a reviewed pull request. Limit: every cohort member still has AdministratorAccess in the shared AWS account and could grant themselves access through the EKS API; Option A (a separate production account) removes that.
-- **Only the approved production job can write `env/production`**, the branch Argo CD deploys to production. The ruleset `app-env-production-lock` blocks creating, updating, deleting and force-pushing it for everyone (admins and the pipeline's GITHUB_TOKEN included) except deploy keys. The only deploy key is write-access and its private half exists only as the secret `ENV_PRODUCTION_DEPLOY_KEY` of the app's `production` environment, which GitHub releases to a job only after the required reviewer approves, and only for runs from `main` (deployment branch policy). So no push, by any team member or any workflow, reaches production without that approval. Why a deploy key: GitHub refuses the GitHub Actions app as a bypass actor on a personal-account repository (422 on 21 Nov 2026), while a deploy key belongs to the repository; a disabled test ruleset proved it is accepted (22 Nov 2026). The private key never touched Git or Terraform state (generated locally, stored with `gh secret set`, deleted). Live since 22 Nov 2026: the first deployment through it (`f15adf8` on `env/production`) was pushed by the deploy key, and a direct push by the repository admin was refused with `GH013`. What remains: the repository admin can still edit the ruleset, and a reviewed change to `cd.yaml` on `main` could misuse the key inside an approved run, so the approver checks what changed in `cd.yaml` before approving.
-
-Not done yet (known gaps, in priority order):
-- **`env/staging` is not protected** (by choice): the staging job pushes with GITHUB_TOKEN, which GitHub cannot exempt from a ruleset here, and staging has no approval step to protect. A push there changes only staging. Moving the repositories into a GitHub organization would allow the same lock for staging with the GitHub Actions app as the bypass actor.
-- Both pipeline roles still have `AdministratorAccess`; scope them per environment (and add the read-only plan and SRE roles), or deny the staging role on resources tagged `Environment=production`.
-- No `allowed_account_ids` guard-rail in the providers.
+- **Staging cannot change production through the pipelines**, the state or the deployment branch. Each of these was tested.
+- **Production access changes only through reviewed pull requests**, because the access lists are code.
+- **The shared account is the remaining hole:** every cohort member can still grant themselves access through the AWS or EKS API. Option A (a separate production account) removes that.
+- **Evidence for the panel:** the trust policies, a refused cross-environment attempt, the `GH013` refusal, and `aws eks list-associated-access-policies` showing View for the team in production.
