@@ -105,12 +105,6 @@ variable "min_running_pods_per_service" {
   default     = 2
 }
 
-variable "app_error_threshold_per_5m" {
-  description = "Alarm when a service logs more than this many ERROR lines in 5 minutes."
-  type        = number
-  default     = 20
-}
-
 variable "node_cpu_alarm_pct" {
   description = "Alarm when average node CPU across the cluster exceeds this %."
   type        = number

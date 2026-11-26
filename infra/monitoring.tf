@@ -394,43 +394,12 @@ resource "aws_cloudwatch_log_group" "eks_control_plane" {
   tags = local.common_tags
 }
 
-# ERROR lines -> metric, one per service. Pattern assumes the Fluent Bit record
-# format (fields "log" and "kubernetes.container_name"). Verify in Logs Insights
-# once real logs flow, and that container_name equals the service name.
-resource "aws_cloudwatch_log_metric_filter" "app_errors" {
-  for_each = local.services
-
-  name           = "${local.name_prefix}-${each.key}-errors"
-  log_group_name = aws_cloudwatch_log_group.ci_application.name
-  pattern        = "{ ($.kubernetes.container_name = \"${each.key}\") && ($.log = \"*ERROR*\") }"
-
-  metric_transformation {
-    name          = "ErrorCount-${each.key}"
-    namespace     = "Carelink/${var.environment}"
-    value         = "1"
-    default_value = "0"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "app_errors" {
-  for_each = aws_cloudwatch_log_metric_filter.app_errors
-
-  alarm_name          = "${local.name_prefix}-${each.key}-error-burst"
-  alarm_description   = "More than ${var.app_error_threshold_per_5m} ERROR log lines in 5 min from ${each.key}. See runbook (diagnosis) and the dashboard log widget."
-  namespace           = "Carelink/${var.environment}"
-  metric_name         = "ErrorCount-${each.key}"
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 3
-  datapoints_to_alarm = 2
-  threshold           = var.app_error_threshold_per_5m
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
-
-  tags = local.common_tags
-}
+# Application error alerts are not here: they come from the services' own
+# metrics in Prometheus (CareLinkServiceErrorRate, app repo
+# charts/carelink/templates/prometheusrule.yaml). The earlier CloudWatch
+# "error burst" alarms read the Container Insights log group above, which
+# receives nothing because no Container Insights agent is installed;
+# application logs go to Loki instead.
 
 # -----------------------------------------------------------------------------
 # SLI/SLO 1 - Availability (request success rate at the load balancer)
@@ -680,7 +649,6 @@ locals {
     aws_cloudwatch_metric_alarm.slo_latency_p95[*].arn,
     [for a in aws_cloudwatch_metric_alarm.pods_running_low : a.arn],
     [for a in aws_cloudwatch_metric_alarm.eks_cluster : a.arn],
-    [for a in aws_cloudwatch_metric_alarm.app_errors : a.arn],
     [for a in aws_cloudwatch_metric_alarm.rds : a.arn],
     [for a in aws_cloudwatch_metric_alarm.cloudtrail : a.arn],
   )
@@ -852,6 +820,8 @@ locals {
     },
   ]
 
+  # Database access log (MySQL audit plugin, rds.tf): who connected, and any
+  # change to users, privileges or schema.
   dash_logs = [
     {
       type   = "log"
@@ -860,10 +830,10 @@ locals {
       width  = 24
       height = 8
       properties = {
-        title  = "Recent application errors (all services, newest first)"
+        title  = "Database access audit (MySQL connections, privilege and schema changes, newest first)"
         region = var.aws_region
         view   = "table"
-        query  = "SOURCE '${aws_cloudwatch_log_group.ci_application.name}' | fields @timestamp, kubernetes.container_name as service, log | filter log like /ERROR|Exception/ | sort @timestamp desc | limit 50"
+        query  = "SOURCE '/aws/rds/instance/${local.db_identifiers["mysql"]}/audit' | fields @timestamp, @message | sort @timestamp desc | limit 50"
       }
     },
   ]
