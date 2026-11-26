@@ -29,8 +29,10 @@ grafana:
   # from the ExternalSecret grafana-github-oauth (observability/secrets/). The
   # switch lives in that Secret on purpose: until the secret has a value,
   # Grafana runs exactly as before. optional: Grafana starts without it.
-  # Reloader restarts Grafana when the Secret appears or changes, because
-  # environment variables are only read at start.
+  # Reloader restarts Grafana when the Secret changes (a rotation), because
+  # environment variables are only read at start. It does not react to the
+  # Secret's first creation: the first switch-on needs one rollout restart
+  # (docs/sre/runbooks/grafana-sso.md, step 5).
   envFromSecrets:
     - name: grafana-github-oauth
       optional: true

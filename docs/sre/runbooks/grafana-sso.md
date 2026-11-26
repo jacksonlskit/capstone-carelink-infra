@@ -27,14 +27,19 @@ Design: [ADR 0011](../../adr/0011-grafana-github-sso.md). The GitHub organizatio
    kubectl -n monitoring annotate externalsecret grafana-github-oauth force-sync="$(date +%s)" --overwrite
    kubectl -n monitoring get externalsecret grafana-github-oauth
    ```
-   Expect `SecretSynced`. Reloader then restarts Grafana (about a minute), and the login page shows **Sign in with GitHub**.
+   Expect `SecretSynced`.
+5. **The first time only, restart Grafana** so it reads the new environment variables (about a minute without Grafana):
+   ```bash
+   kubectl -n monitoring rollout restart deploy/kube-prometheus-stack-grafana
+   ```
+   Reloader restarts Grafana when the Secret *changes* (for example after a rotation), but not when it is first *created*; seen on 26 Nov 2026. Afterwards the login page shows **Sign in with GitHub**.
 
 ## Check it works
 
 | Check | Expected |
 |---|---|
 | `curl -sI https://carelink-<env>-grafana.sctp-sandbox.com/api/health \| head -1` | `HTTP/2 200` |
-| `kubectl -n monitoring get pod -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.annotations}'` | a recent `reloader.stakater.com/last-reloaded-from` after step 4 |
+| `kubectl -n monitoring get pod -l app.kubernetes.io/name=grafana` | a pod started after step 5 (or, after a rotation, restarted by Reloader) |
 | DevOps owner signs in with GitHub | Admin |
 | Teammate signs in (production) | Viewer: dashboards and Explore work; **Save** is not offered |
 | Someone outside the organization | refused ("Login failed") |
