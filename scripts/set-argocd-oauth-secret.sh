@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
-# Store an Argo CD GitHub OAuth App's client ID and secret in Secrets Manager
-# (carelink-<env>-argocd-github-oauth), where External Secrets picks them up for
-# Dex (infra/argocd.tf, ADR 0010).
+# Store a GitHub OAuth App's client ID and secret in Secrets Manager
+# (carelink-<env>-<app>-github-oauth), where External Secrets picks them up:
+#   argocd  -> Dex (infra/argocd.tf, ADR 0010)
+#   grafana -> Grafana (observability/secrets/grafana-github-oauth.yaml, ADR 0011)
 #
 # Prompts for both values. The client secret is never echoed, never put on a
 # command line (where other processes could see it) and never left in a file.
 #
-# Usage: scripts/set-argocd-oauth-secret.sh staging|production
-# Runbook: docs/sre/runbooks/argocd-sso.md
+# Usage: scripts/set-argocd-oauth-secret.sh staging|production [argocd|grafana]
+#        (the app defaults to argocd)
+# Runbooks: docs/sre/runbooks/argocd-sso.md, docs/sre/runbooks/grafana-sso.md
 set -euo pipefail
 
 env=${1:-}
-if [[ $env != staging && $env != production ]]; then
-  echo "usage: $0 staging|production" >&2
+app=${2:-argocd}
+if [[ $env != staging && $env != production ]] || [[ $app != argocd && $app != grafana ]]; then
+  echo "usage: $0 staging|production [argocd|grafana]" >&2
   exit 2
 fi
-secret_id="carelink-${env}-argocd-github-oauth"
+secret_id="carelink-${env}-${app}-github-oauth"
 region=${AWS_REGION:-us-east-1}
 
 # Fails early if Terraform has not created the secret yet (or the wrong account is active).
 aws secretsmanager describe-secret --secret-id "$secret_id" --region "$region" --query Name --output text >/dev/null
 
-read -r -p "Client ID of the ${env} OAuth App: " client_id
+read -r -p "Client ID of the ${env} ${app} OAuth App: " client_id
 read -r -s -p "Client secret (input hidden): " client_secret
 echo
 
@@ -43,4 +46,8 @@ unset client_secret
 version=$(aws secretsmanager put-secret-value --secret-id "$secret_id" --region "$region" \
   --secret-string "file://$file" --query VersionId --output text)
 echo "Stored a new version of ${secret_id} (${version})."
-echo "External Secrets copies it into argocd/argocd-dex-github within 5 minutes (runbook step 3 forces it now)."
+if [[ $app == argocd ]]; then
+  echo "External Secrets copies it into argocd/argocd-dex-github within 5 minutes (runbook step 3 forces it now)."
+else
+  echo "External Secrets copies it into monitoring/grafana-github-oauth within 5 minutes; Reloader then restarts Grafana."
+fi

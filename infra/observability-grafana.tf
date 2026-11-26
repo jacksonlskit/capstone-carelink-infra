@@ -56,3 +56,24 @@ resource "terraform_data" "grafana_admin_first_value" {
     EOT
   }
 }
+
+# ==============================================================================
+# Grafana GitHub sign-in (ADR 0011)
+# ------------------------------------------------------------------------------
+# Client ID and secret of the environment's Grafana GitHub OAuth App (created by
+# hand in the organization carelink-group03; GitHub has no API for it). Stored
+# by a person with scripts/set-argocd-oauth-secret.sh <env> grafana, never by
+# Terraform, for the same reason as above: an imported version would put the
+# value into the state. Value format: {"clientID": "...", "clientSecret": "..."}
+# External Secrets copies it into the Kubernetes Secret "grafana-github-oauth"
+# (observability/secrets/grafana-github-oauth.yaml), which Grafana reads as
+# GF_AUTH_GITHUB_CLIENT_ID / GF_AUTH_GITHUB_CLIENT_SECRET.
+# ==============================================================================
+
+resource "aws_secretsmanager_secret" "grafana_github_oauth" {
+  name        = "${local.name_prefix}-grafana-github-oauth" # key used by observability/secrets/grafana-github-oauth.yaml
+  description = "Client ID and secret of the ${var.environment} Grafana GitHub OAuth App (org carelink-group03); stored by hand, read by External Secrets"
+  kms_key_id  = aws_kms_key.this["secrets"].arn
+
+  tags = local.common_tags
+}

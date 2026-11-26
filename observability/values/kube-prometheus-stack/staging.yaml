@@ -11,6 +11,71 @@ grafana:
       url: http://carelink-loki.monitoring.svc.cluster.local:3100
       isDefault: false
 
+  # ---- Public URL with GitHub sign-in (ADR 0011) ------------------------------
+  # Grafana keeps its data on a ReadWriteOnce disk. The default rolling update
+  # starts the new pod before stopping the old one and hangs when they land on
+  # different nodes (the disk cannot attach twice). maxSurge 0 / maxUnavailable
+  # 1 stops the old pod first: about a minute of downtime per change, but no
+  # stuck rollout. (Not type Recreate: server-side apply keeps the defaulted
+  # rollingUpdate block on the live Deployment, and the API server then rejects
+  # Recreate. Seen in a server dry run on 26 Nov.)
+  deploymentStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  # Client ID and secret of the GitHub OAuth App, plus GF_AUTH_GITHUB_ENABLED,
+  # from the ExternalSecret grafana-github-oauth (observability/secrets/). The
+  # switch lives in that Secret on purpose: until the secret has a value,
+  # Grafana runs exactly as before. optional: Grafana starts without it.
+  # Reloader restarts Grafana when the Secret appears or changes, because
+  # environment variables are only read at start.
+  envFromSecrets:
+    - name: grafana-github-oauth
+      optional: true
+  annotations:
+    secret.reloader.stakater.com/reload: grafana-github-oauth
+
+  grafana.ini:
+    server:
+      root_url: https://carelink-staging-grafana.sctp-sandbox.com
+    auth.github:
+      enabled: false # switched on by GF_AUTH_GITHUB_ENABLED from the Secret
+      allow_sign_up: true
+      scopes: user:email,read:org
+      allowed_organizations: carelink-group03
+      # GitHub teams arrive as groups "@<org>/<team>". Anyone in neither team
+      # is refused (role_attribute_strict). Teams: oicd-bootstrap/main.tf.
+      role_attribute_path: "contains(groups[*], '@carelink-group03/devops') && 'Admin' || contains(groups[*], '@carelink-group03/team') && 'Admin' || ''"
+      role_attribute_strict: true
+      allow_assign_grafana_admin: false
+  # Own internet-facing ALB, same pattern as the app and Argo CD Ingresses.
+  # The ACM certificate (oicd-bootstrap/main.tf) is found by this hostname.
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      alb.ingress.kubernetes.io/backend-protocol: HTTP
+      alb.ingress.kubernetes.io/healthcheck-path: /api/health
+      alb.ingress.kubernetes.io/success-codes: "200"
+      # The nightly cleanup skips resources with the team's Project tag.
+      alb.ingress.kubernetes.io/tags: Project=capstone-project-group-03,Environment=staging
+      # external-dns (infra/dns.tf) points the hostname at this ALB.
+      external-dns.alpha.kubernetes.io/hostname: carelink-staging-grafana.sctp-sandbox.com
+    hosts:
+      - carelink-staging-grafana.sctp-sandbox.com
+    path: /
+    pathType: Prefix
+    tls:
+      - hosts:
+          - carelink-staging-grafana.sctp-sandbox.com
+
 prometheus:
   prometheusSpec:
     externalLabels:
