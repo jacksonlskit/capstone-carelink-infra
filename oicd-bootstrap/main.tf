@@ -622,6 +622,51 @@ resource "aws_acm_certificate_validation" "argocd" {
   validation_record_fqdns = [aws_route53_record.argocd_cert_validation[each.key].fqdn]
 }
 
+# Grafana also has its own hostname and ALB per environment
+# (observability/values/kube-prometheus-stack/<env>.yaml, ADR 0011).
+locals {
+  grafana_hostnames = {
+    staging    = "carelink-staging-grafana.${local.app_dns_zone}"
+    production = "carelink-production-grafana.${local.app_dns_zone}"
+  }
+}
+
+resource "aws_acm_certificate" "grafana" {
+  for_each = local.grafana_hostnames
+
+  domain_name       = each.value
+  validation_method = "DNS"
+  key_algorithm     = "RSA_2048"
+
+  # Project comes from the provider's default_tags; setting it here would override it.
+  tags = {
+    Environment = each.key
+    ManagedBy   = "terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "grafana_cert_validation" {
+  for_each = aws_acm_certificate.grafana
+
+  zone_id         = data.aws_route53_zone.sandbox.zone_id
+  name            = one(each.value.domain_validation_options).resource_record_name
+  type            = one(each.value.domain_validation_options).resource_record_type
+  records         = [one(each.value.domain_validation_options).resource_record_value]
+  ttl             = 300
+  allow_overwrite = true
+}
+
+resource "aws_acm_certificate_validation" "grafana" {
+  for_each = aws_acm_certificate.grafana
+
+  certificate_arn         = each.value.arn
+  validation_record_fqdns = [aws_route53_record.grafana_cert_validation[each.key].fqdn]
+}
+
 # -----------------------------------------------------------------------------
 # GITHUB ORGANIZATION: WHO MAY SIGN IN TO ARGO CD
 # -----------------------------------------------------------------------------
@@ -731,4 +776,9 @@ output "app_certificate_arns" {
 output "argocd_certificate_arns" {
   description = "ACM certificate ARNs per environment for the Argo CD ALB (found by hostname by the Load Balancer Controller)"
   value       = { for env, v in aws_acm_certificate_validation.argocd : env => v.certificate_arn }
+}
+
+output "grafana_certificate_arns" {
+  description = "ACM certificate ARNs per environment for the Grafana ALB (found by hostname by the Load Balancer Controller)"
+  value       = { for env, v in aws_acm_certificate_validation.grafana : env => v.certificate_arn }
 }

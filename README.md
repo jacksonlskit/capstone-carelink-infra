@@ -76,6 +76,7 @@ docs/                           architecture, compliance mapping, ADRs, SLOs and
 - **Cluster access:** per environment in `infra/variables.tf` (`cluster_access`). In production only the DevOps owner is cluster admin; the rest of the team is view-only, plus `kubectl port-forward` in the `monitoring` namespace so they can open Grafana (Role `monitoring-portforward`, `infra/eks.tf`).
 - **Known limits** ([ADR 0006](docs/adr/0006-environment-isolation.md)): both pipeline roles have AdministratorAccess in the shared cohort account, and `env/staging` is not locked (staging has no approval step).
 - **Argo CD UI** ([ADR 0010](docs/adr/0010-argocd-github-sso.md)): `https://carelink-<env>-argocd.sctp-sandbox.com`, GitHub sign-in for members of the `carelink-group03` organization, no local admin. In production only the DevOps owner is admin; the rest of the team is read-only. Staging first; production follows. Runbook: [docs/sre/runbooks/argocd-sso.md](docs/sre/runbooks/argocd-sso.md).
+- **Grafana** ([ADR 0011](docs/adr/0011-grafana-github-sso.md)): `https://carelink-<env>-grafana.sctp-sandbox.com`, GitHub sign-in for the same organization and teams. In production only the DevOps owner is Admin; the rest of the team are Viewers (Explore allowed, no saving). The admin login stays as break-glass. Runbook: [docs/sre/runbooks/grafana-sso.md](docs/sre/runbooks/grafana-sso.md).
 
 ## Bootstrap
 
