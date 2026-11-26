@@ -47,8 +47,8 @@ data:
         {
           "id": 1,
           "type": "stat",
-          "title": "Live Active Cluster Run-Rate (Hybrid EC2)",
-          "description": "Fixed AWS IaC costs + live EC2 worker node count * per-node rate",
+          "title": "Live Cluster Run-Rate (IaC + Nodes + Load Balancers)",
+          "description": "Fixed AWS IaC costs + live EC2 worker node count * per-node rate. Adds the Application Load Balancers counted live from the cluster's Ingresses (not in Terraform).",
           "gridPos": {
             "x": 0,
             "y": 0,
@@ -61,7 +61,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"}))",
+              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"})) + (count(kube_ingress_info{ingressclass=\"alb\"}) or vector(0)) * scalar(carelink_infracost_alb_unit_monthly_usd{environment=\"$env\"})",
               "refId": "A"
             }
           ],
@@ -153,13 +153,45 @@ data:
           }
         },
         {
+          "id": 7,
+          "type": "stat",
+          "title": "Load Balancers (live)",
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 4,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "count(kube_ingress_info{ingressclass=\"alb\"}) or vector(0)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "purple"
+              }
+            }
+          },
+          "description": "Application Load Balancers in this cluster: one per Ingress with class alb (app, Argo CD, Grafana). Each costs about $27.38/month with its 3 public IPv4 addresses; not visible to Infracost because Kubernetes creates them."
+        },
+        {
           "id": 4,
           "type": "stat",
           "title": "Combined 24/7 IaC Run-Rate (Staging + Prod)",
           "gridPos": {
-            "x": 16,
+            "x": 20,
             "y": 0,
-            "w": 8,
+            "w": 4,
             "h": 5
           },
           "datasource": {
@@ -215,7 +247,7 @@ data:
         {
           "id": 6,
           "type": "timeseries",
-          "title": "Live Cluster Monthly Run-Rate Trend (Reacts to EC2 Node Scaling)",
+          "title": "Live Cluster Monthly Run-Rate Trend (Reacts to Node and Load Balancer Changes)",
           "gridPos": {
             "x": 12,
             "y": 5,
@@ -228,7 +260,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"}))",
+              "expr": "sum(carelink_infracost_fixed_monthly_usd{environment=\"$env\"}) + (count(kube_node_info) * scalar(carelink_infracost_ec2_node_unit_monthly_usd{environment=\"$env\"})) + (count(kube_ingress_info{ingressclass=\"alb\"}) or vector(0)) * scalar(carelink_infracost_alb_unit_monthly_usd{environment=\"$env\"})",
               "legendFormat": "Live $env Monthly Run-Rate",
               "refId": "A"
             },
