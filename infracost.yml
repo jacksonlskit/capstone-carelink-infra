@@ -1,5 +1,8 @@
 # Infracost projects: the same Terraform (infra/) priced once per environment.
 # Used by scripts/export-infracost-metrics.py and the infracost.yaml workflow.
+# The vars match what the pipelines set (TF_VAR_* in ci.yaml and cd.yaml), so
+# Infracost prices what is actually deployed: the SLO alarms (monitor_alb), the
+# Discord bridge (discord_alerts_enabled) and the Argo CD sign-in resources.
 version: '0.3'
 projects:
   - path: infra
@@ -7,8 +10,14 @@ projects:
     terraform:
       vars:
         environment: staging
+        monitor_alb: true
+        discord_alerts_enabled: true
+        argocd_sso_enabled: true
   - path: infra
     name: carelink-production
     terraform:
       vars:
         environment: production
+        monitor_alb: true
+        discord_alerts_enabled: true
+        argocd_sso_enabled: true

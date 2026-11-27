@@ -6,7 +6,8 @@ locals {
     postgres = 5432
   }
   db_log_exports = {
-    mysql    = ["error", "slowquery"]
+    # "audit" is the access log written by the option group below.
+    mysql    = ["audit", "error", "slowquery"]
     postgres = ["postgresql", "upgrade"]
   }
 }
@@ -66,7 +67,10 @@ resource "aws_db_instance" "main" {
   db_subnet_group_name = aws_db_subnet_group.main.name
   # MySQL refuses connections without TLS (parameter group below). Other
   # engines keep the AWS default group (null = leave it unchanged).
-  parameter_group_name   = each.value.engine == "mysql" ? aws_db_parameter_group.mysql.name : null
+  parameter_group_name = each.value.engine == "mysql" ? aws_db_parameter_group.mysql.name : null
+  # MySQL writes an audit log of connections and privilege/schema changes
+  # (option group below). Other engines keep the AWS default option group.
+  option_group_name      = each.value.engine == "mysql" ? aws_db_option_group.mysql.name : null
   vpc_security_group_ids = [aws_security_group.rds[each.key].id]
   publicly_accessible    = false
 
@@ -120,6 +124,41 @@ resource "aws_db_parameter_group" "mysql" {
     name         = "require_secure_transport"
     value        = "1"
     apply_method = "immediate"
+  }
+
+  # Fixed name: scripts/generate-imports.sh finds it by name after the nightly
+  # cleanup deletes the Terraform state.
+  tags = { Name = "${local.name_prefix}-mysql" }
+}
+
+# Database access logging (hard constraint "production data access logged").
+# The MariaDB Audit Plugin records who connects (user, host, success or
+# failure) and every change to users, privileges and schema, in the "audit"
+# log that RDS exports to CloudWatch (/aws/rds/instance/<id>/audit).
+# Ordinary queries (SELECT, INSERT, ...) are deliberately not logged: they
+# carry patient data (PDPA), and the log would grow with every request.
+# rdsadmin (RDS's own monitoring connections) is excluded to keep it readable.
+# No reboot is needed: auditing starts as soon as the option group is active.
+# Production applies database changes in the maintenance window; to activate
+# it earlier, see docs/sre/runbooks/database-tls-and-persistence.md.
+resource "aws_db_option_group" "mysql" {
+  name                     = "${local.name_prefix}-mysql"
+  option_group_description = "${local.name_prefix} MySQL: audit log of connections, privilege and schema changes"
+  engine_name              = "mysql"
+  major_engine_version     = "8.0"
+
+  option {
+    option_name = "MARIADB_AUDIT_PLUGIN"
+
+    option_settings {
+      name  = "SERVER_AUDIT_EVENTS"
+      value = "CONNECT,QUERY_DCL,QUERY_DDL"
+    }
+
+    option_settings {
+      name  = "SERVER_AUDIT_EXCL_USERS"
+      value = "rdsadmin"
+    }
   }
 
   # Fixed name: scripts/generate-imports.sh finds it by name after the nightly

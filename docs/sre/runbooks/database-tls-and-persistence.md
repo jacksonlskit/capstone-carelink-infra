@@ -37,6 +37,26 @@ scripts/test-db-persistence.sh staging --tls
 ```
 It writes an owner through the public API, reads it back 10 times (both customers-service pods), deletes **every** app pod, waits for them to return and reads the owner again. With `--tls` it also shows a MySQL client being refused without TLS (`ERROR 3159 ... insecure transport are prohibited`) and connecting with TLS.
 
+## Audit log (who accessed the database)
+
+The MariaDB Audit Plugin (option group `carelink-<env>-mysql`, `infra/rds.tf`) logs every connection (user, host, success or failure) and every change to users, privileges and schema (`CONNECT,QUERY_DCL,QUERY_DDL`). Ordinary queries are not logged: they contain patient data. RDS's own `rdsadmin` connections are left out. RDS exports the log to CloudWatch: `/aws/rds/instance/carelink-<env>-mysql/audit`. The CloudWatch dashboard shows the newest events in "Database access audit".
+
+**Switch it on in production now.** Production applies database changes in the Sunday maintenance window (`apply_immediately = false`). After the infra pipeline has applied the option group, apply it immediately. No reboot is needed; auditing starts as soon as the option group is `in-sync`:
+```bash
+aws rds describe-db-instances --db-instance-identifier carelink-production-mysql --query 'DBInstances[0].PendingModifiedValues'
+aws rds modify-db-instance --db-instance-identifier carelink-production-mysql --option-group-name carelink-production-mysql --apply-immediately
+aws rds describe-db-instances --db-instance-identifier carelink-production-mysql --query 'DBInstances[0].OptionGroupMemberships'
+```
+Check the first command first: `--apply-immediately` also applies any other pending change. The last command should show `"Status": "in-sync"` within a few minutes.
+
+**Prove it (evidence):** the app's connection pool connects as soon as a pod starts, so restarting one pod produces `CONNECT` events:
+```bash
+aws logs filter-log-events --log-group-name /aws/rds/instance/carelink-<env>-mysql/audit --start-time $(( ($(date +%s) - 900) * 1000 )) --max-items 5 --query 'events[].message'
+```
+Each line shows the time, the database user, the client IP (a pod in a private subnet) and the event (`CONNECT`, `DISCONNECT`, `FAILED_CONNECT`, or the DCL/DDL statement).
+
+Limit: RDS creates the audit log group itself, with no retention and no customer-managed key (like the `error` and `slowquery` groups; see `manage_rds_log_groups` in `infra/monitoring-variables.tf`).
+
 ## Password rotation
 
 RDS rotates the master password every 7 days. External Secrets re-reads it every 5 minutes and updates `carelink-db`; Reloader then restarts the app pods one at a time (PodDisruptionBudgets keep one pod per service serving). Between the rotation and the restart (at most about 5 minutes), connections the pods already hold keep working, but new ones fail.
