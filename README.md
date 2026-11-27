@@ -176,6 +176,7 @@ Making Infrastructure Changes
   ⚬ Terraform Plan (staging)
   ⚬ Terraform Plan (production)
 5. Once approved and checks pass, merge the Pull Request.
+6.Keep pull requests small and link the related ADR
 
 Production Promotion
 
