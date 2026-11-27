@@ -9,7 +9,7 @@ data:
   carelink-sre-overview.json: |
     {
       "uid": "carelink-sre-overview",
-      "title": "CareLink Health — Service & SLO Overview",
+      "title": "CareLink Health — 99.9% Availability & SLOs",
       "tags": [
         "carelink",
         "sre",
